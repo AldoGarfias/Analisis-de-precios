@@ -1,0 +1,21 @@
+# Motor de precio óptimo v3 — dependencias
+# Instalar en un venv:  python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
+
+# --- Base: conexión a BD + extracción a parquet ---
+pymysql            # driver MySQL / Aurora MySQL (db.py)
+python-dotenv      # lee .env.local
+pandas
+numpy
+pyarrow            # data/*.parquet
+
+# --- Datos / análisis (se usarán en panel/modelo/optimizador) ---
+duckdb
+
+# --- Econometría (elasticidad v3) ---
+linearmodels       # FE de dos vías, IV
+pyfixest           # PPML (fepois) — prioridad #1 del v3
+
+# --- ML (forecast.py, dml.py) ---
+scikit-learn       # HistGradientBoosting
+requests
+joblib

@@ -1,0 +1,25 @@
+# Credenciales — NUNCA subir
+.env.local
+.env
+.env.*
+!.env.example
+
+# Datos crudos y salidas (datos de clientes, costos, márgenes)
+data/
+out/
+*.parquet
+*.joblib
+*.csv
+*.xlsx
+
+# Config local de herramientas (contiene endpoint interno de AWS)
+.claude/settings.local.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Logs y sistema
+*.log
+.DS_Store
