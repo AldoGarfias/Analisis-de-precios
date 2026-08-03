@@ -313,3 +313,27 @@ TPAR5AC, 823/574→0, juez del forecast, N1-N13 de ronda 2 intactos).
   decisiones de regla del usuario (±10pts acumulado, sobrestock vs holdout,
   re-toque corto, cierre de frenos, valuación de canibalización, presupuesto
   de cambios).
+
+---
+
+# RONDA 4 (2026-08-03) — pre-entrega (GitHub / equipo ERP)
+
+4 auditores: reglas capa-por-capa / cadena diaria y cachés / seguridad / portabilidad.
+VEREDICTO: 0 discrepancias de comportamiento; código = fuente fiel de las reglas.
+
+- [x] BUG VIVO corregido: api_bi lanzaba SystemExit (307/env) que los try/except
+      de la cadena diaria no atrapan — la cadena del 2026-08-03 murió a la mitad
+      sin notificación. Fix: RuntimeError en errores recuperables + la cadena
+      atrapa (Exception, SystemExit).
+- [x] .gitignore completo (agrega .claude/settings.local.json con endpoint
+      interno AWS, *.log, *.csv/xlsx defensa, .DS_Store); git init + commit
+      inicial 43ebb46 (62 archivos, 0 secretos, 0 datos); .env.example con
+      variables BI_*; requirements.txt + requests/joblib.
+- [x] Docs alineados: orden canónico 8 pasos, KVI en el árbol, mezcla de canal
+      como override 0, CLAUDE.md 8 pasos; ONBOARDING.md creado (mapa de entrega:
+      BDs, capas en orden, seguimiento diario, cachés, arranque).
+- PENDIENTES OPERATIVOS (dueño: usuario/IT): API en 307 (alta de IP) y VPN caída
+  A LA VEZ desde 2026-07-28 — vigía congelada al snap 2026-07-29; cron 0:00 de
+  paneles nunca ha corrido (la Mac duerme; migrar a launchd/servidor); extracción
+  diaria de ventas aún manual (recomendado sumarla al cron en el nuevo entorno);
+  cierre de ciclo 0 requiere panel que cubra 2026-08-03 (⇒ ~08-10).
