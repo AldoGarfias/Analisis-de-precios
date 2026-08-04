@@ -3,7 +3,7 @@
   1. Motor (todos los evaluables): filtros por dirección, rol KVI/SD/PG,
      proveedor, confianza, costo-movió y búsqueda por código
   2. Dormidos (2ª capa): ≥8 semanas de muerte efectiva CON stock vendible
-  3. Simulador: la misma matemática del motor por SKU (u=u0·f^ε)
+  3. Simulador: la misma matemática del motor por modelo (u=u0·f^ε)
 
 Arquitectura: las filas viajan como JSON compacto y se renderizan con JS al
 aplicar filtros (máx 500 visibles con contador); los paneles individuales van
@@ -77,7 +77,13 @@ def generar(n_paneles=30, n_top=200):
         rc_pan = pd.read_csv(ruta_rc)
         rc_pan = rc_pan[pd.to_datetime(rc_pan.fecha_ultimo) >=
                         pd.Timestamp.today().normalize() - pd.Timedelta(days=21)]
-        con_panel |= (set(rc_pan.codigo) & set(recos.codigo))
+        # tope: los 100 de mayor utilidad (2026-08-04: una ola de 224 eventos
+        # infló el HTML a 17MB > límite de publicación de 16MB; el resto tiene
+        # su detallado en el caché nocturno out/paneles/)
+        rc_codigos = set(rc_pan.codigo) & set(recos.codigo)
+        rc_top = (recos[recos.codigo.isin(rc_codigos)]
+                  .nlargest(100, "utilidad_sem_mantener").codigo)
+        con_panel |= set(rc_top)
     paneles, datos = [], {}
     for cod in con_panel:
         sid = _safe(cod)
@@ -409,6 +415,8 @@ def generar(n_paneles=30, n_top=200):
       <option value="m">media</option><option value="b">baja</option>
     </select>
     <input class="btn" id="busca" placeholder="Buscar código…" oninput="pintar()" style="min-width:160px">
+    <button class="btn" onclick="exportaCsv()" title="Descarga un .csv (modelo, precio_sugerido) con TODOS los modelos de la selección actual — respeta los filtros de dirección, rol, proveedor, confianza, costo y búsqueda">⬇ CSV</button>
+    <button class="btn" id="btnApl" onclick="aplicarSel()" title="Aplica en el ERP los modelos marcados con la casilla — vía el puente local (aplicar.py servir), que valida P1/P3, guardrails y registra en monitoreo">🚀 Aplicar (0)</button>
   </div>
 
   <div class="card">
@@ -418,7 +426,7 @@ def generar(n_paneles=30, n_top=200):
     <table>
       {'<colgroup><col style="width:26%"><col style="width:4%"><col style="width:9%"><col style="width:6%"><col style="width:7%"><col style="width:15%"><col style="width:8%"><col style="width:4%"><col style="width:6%"><col style="width:15%"></colgroup>' if tiene_prov else '<colgroup><col style="width:29%"><col style="width:5%"><col style="width:7%"><col style="width:8%"><col style="width:17%"><col style="width:8%"><col style="width:5%"><col style="width:6%"><col style="width:15%"></colgroup>'}
       <thead><tr><th>Código</th><th>Rol</th>{'<th>Proveedor</th>' if tiene_prov else ''}<th>Precio actual</th><th title="paso del ciclo de 3 semanas">Precio sugerido</th><th>Impacto en utilidad / motivo</th>
-          <th>Unid/sem</th><th>Margen</th><th title="Meses de stock (v3): stock en almacenes de venta ÷ demanda esperada mensual — forecast propio cuando pasa el filtro de credibilidad del SKU; si no, venta real sin meses de cero-por-stockout + tasa de proyectos (el hover de cada celda dice su fuente). +N BO = unidades pedidas en camino (backorder). Rojo ≥12 meses: guardrail sobrestock (no subir; con margen, bajar para rotar)">Stock</th><th title="Margen de error del pronóstico de venta de cada modelo (su rango p10-p90 vs lo esperado) y su nivel de confianza. Pasa el cursor sobre la celda para ver la tasa base histórica de la maniobra.">Confiabilidad</th></tr></thead>
+          <th>Unid/sem</th><th>Margen</th><th title="Meses de stock (v3): stock en almacenes de venta ÷ demanda esperada mensual — forecast propio cuando pasa el filtro de credibilidad del modelo; si no, venta real sin meses de cero-por-stockout + tasa de proyectos (el hover de cada celda dice su fuente). +N BO = unidades pedidas en camino (backorder). Rojo ≥12 meses: guardrail sobrestock (no subir; con margen, bajar para rotar)">Stock</th><th title="Margen de error del pronóstico de venta de cada modelo (su rango p10-p90 vs lo esperado) y su nivel de confianza. Pasa el cursor sobre la celda para ver la tasa base histórica de la maniobra.">Confiabilidad</th></tr></thead>
       <tbody id="cuerpo"></tbody>
     </table>
   </div>
@@ -458,7 +466,7 @@ def generar(n_paneles=30, n_top=200):
   <div id="vista-sim" class="oculto">
   <div class="card" style="margin-bottom:12px">
     <div class="sec-t">🧮 Simulador de escenarios — ¿qué pasa si movemos el precio n%?</div>
-    <div class="sec-s">Misma matemática auditada del motor: unidades = u0·(1+n%)^ε con la ε de cada SKU
+    <div class="sec-s">Misma matemática auditada del motor: unidades = u0·(1+n%)^ε con la ε de cada modelo
       (segmento afinado por proveedor) y banda IC95 por la incertidumbre de ε. Alcance: todo el catálogo
       evaluable, uno o varios proveedores, o una lista de códigos. Es exploratorio — NO respeta guardrails;
       los avisos indican qué violaría.</div>
@@ -501,7 +509,7 @@ __JS_LIB__
 const DATOS = __DATOS__;
 const FILAS = __FILAS__;
 const CAL = __CAL__;
-// margen de error de todo el catálogo, ordenado: da el "lugar" de cada SKU
+// margen de error de todo el catálogo, ordenado: da el "lugar" de cada modelo
 // (percentil) para el flotante de la columna Confiabilidad
 const ERRS_CAT = FILAS.map(f => 100*(f[10]-f[9])/(2*Math.max(f[8],1e-9))).sort((a,b)=>a-b);
 const ERR_MED = Math.round(ERRS_CAT[Math.floor(ERRS_CAT.length/2)]);
@@ -666,12 +674,13 @@ function celdas(f){
   const confi = '<b class="num hint" style="color:'+colErr+'">'+errTxt+'</b><span class="rng">error de venta · <b class="hint" style="color:'+colErr+'">'+(NIVEL_C[conf]||"")+'</b></span>';
   const sug = dir==="M" ? usd(ps)+' <span style="color:var(--gris)">(=)</span>'
                         : '<b>'+usd(ps)+'</b>';
-  return '<tr'+clic+'><td title="'+cod+(motivo?' — '+motivo:'')+'">'+marca+'<span style="font-weight:600;color:var(--azul)">'+cod+'</span> '+badge+'</td>'
+  const chk = (ps!==null && dir!=="M") ? '<input type="checkbox" '+(selApl.has(cod)?'checked ':'')+'data-c="'+cod+'" onclick="event.stopPropagation();tSel(this.dataset.c,this)" style="margin-right:6px;vertical-align:middle" title="Seleccionar para aplicar en el ERP"> ' : '';
+  return '<tr'+clic+'><td title="'+cod+(motivo?' — '+motivo:'')+'">'+chk+marca+'<span style="font-weight:600;color:var(--azul)">'+cod+'</span> '+badge+'</td>'
     +'<td>'+(rolB||'<span class="rng">Estándar</span>')+'</td>'
     +(TIENE_PROV?('<td title="'+(prov||"")+'"><span class="rng" style="font-size:12px;text-align:left">'+(prov||"—")+'</span></td>'):"")
     +'<td class="num">'+usd(pa)+'</td><td class="num">'+sug+'</td><td title="'+ttEps+'">'+dcell+'</td>'
     +'<td class="num">'+Number(u).toLocaleString()+'<span class="rng">rango '+Number(p10).toLocaleString()+'–'+Number(p90).toLocaleString()+'</span></td>'
-    +'<td class="num">'+mg+'%</td><td class="num"'+(mesesF?' title="Meses de stock v3 — demanda esperada: '+mesesF+' (el forecast propio — ensamble GBM+ingenuo, adoptado por duelo out-of-time — solo se usa cuando pasa el filtro de credibilidad del SKU; proyectos cuentan como rotación a tasa de ventana larga)"':'')+'>'+inv+'</td><td title="'+ttConf+'">'+confi+'</td></tr>';
+    +'<td class="num">'+mg+'%</td><td class="num"'+(mesesF?' title="Meses de stock v3 — demanda esperada: '+mesesF+' (el forecast propio — ensamble GBM+ingenuo, adoptado por duelo out-of-time — solo se usa cuando pasa el filtro de credibilidad del modelo; proyectos cuentan como rotación a tasa de ventana larga)"':'')+'>'+inv+'</td><td title="'+ttConf+'">'+confi+'</td></tr>';
 }
 function pintar(){
   const rol = document.getElementById("sel_rol").value;
@@ -686,6 +695,41 @@ function pintar(){
   document.getElementById("contador").textContent =
     "— " + sel.length.toLocaleString() + " modelos" +
     (sel.length > MAX_VISIBLE ? " (mostrando los " + MAX_VISIBLE + " de mayor utilidad)" : "");
+  selMotor = sel;  // selección vigente para exportar CSV (incluye TODO el filtro, no solo lo visible)
+}
+let selMotor = [];
+const selApl = new Set();
+function tSel(cod, el){ el.checked ? selApl.add(cod) : selApl.delete(cod);
+  const b=document.getElementById("btnApl"); if(b) b.textContent = "🚀 Aplicar ("+selApl.size+")"; }
+function aplicarSel(){
+  if (!selApl.size) return alert("Marca la casilla de los modelos a aplicar");
+  const ms = []; FILAS.forEach(f => { if (selApl.has(f[0]) && f[7] !== null) ms.push({modelo: f[0], precio: f[7]}); });
+  if (confirm("¿Aplicar "+ms.length+" cambio(s) de precio en el ERP?\\n(el puente valida P1/P3 y guardrails)")) _postApl(ms);
+}
+function aplicarUno(cod, p){ if (confirm("¿Aplicar "+cod+" a $"+p+" en el ERP?")) _postApl([{modelo: cod, precio: p}]); }
+function _postApl(ms){
+  fetch("http://127.0.0.1:8765/aplicar", {method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify({modelos: ms})})
+  .then(r => r.json())
+  .then(j => { alert((j.resultados||[]).map(r => r.modelo+": "+(r.status||"?")).join("\\n") || ("Error: "+(j.error||"?"))); })
+  .catch(() => alert("Sin puente local. En la máquina del motor corre:\\n  ./.venv/bin/python aplicar.py servir\\n(la API key vive ahí, nunca en este reporte). Desde el artifact publicado no funciona — abre el reporte local (out/reporte_precios.html)."));
+}
+function exportaCsv(){
+  // modelo + precio sugerido + comentario para el campo del ERP (usuario
+  // 2026-08-04: todo cambio aplicado debe quedar etiquetado como del motor)
+  const lineas = ["modelo,precio_sugerido,comentario"];
+  selMotor.forEach(f => { if (f[7] !== null){
+    const pct = f[6] > 0 ? Math.round(1000*(f[7]/f[6]-1))/10 : 0;
+    lineas.push(f[0] + "," + f[7] + ",Motor de Precios v3 | ciclo __CORTE__ | "
+                + (pct>0?"+":"") + pct + "%");
+  }});
+  const etiqueta = {T:"todas", S:"subir", B:"bajar", M:"mantener"}[dirAct] || "seleccion";
+  const blob = new Blob(["﻿" + lineas.join("\\n")], {type: "text/csv;charset=utf-8"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "precios_" + etiqueta + "_" + new Date().toISOString().slice(0,10) + ".csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 function abrir(sid){
   document.getElementById("resumen").classList.add("oculto");
@@ -757,7 +801,7 @@ function simular(){
   const cods = new Set(document.getElementById("sim_cods").value.toUpperCase().split(/[\\s,;]+/).filter(Boolean));
   const sel = SIM.filter(r => cods.size ? cods.has(r[0].toUpperCase())
                         : (!simProvSel.size || simProvSel.has(r[1])));
-  if (!sel.length){ out.innerHTML = '<div class="card" style="padding:16px;color:var(--gris)">Ningún SKU evaluable coincide con el alcance.</div>'; return; }
+  if (!sel.length){ out.innerHTML = '<div class="card" style="padding:16px;color:var(--gris)">Ningún modelo evaluable coincide con el alcance.</div>'; return; }
   let u0T=0,u1T=0,pi0T=0,pi1T=0,loT=0,hiT=0,ing0T=0,ing1T=0,awsT=0,nAws=0;
   let nPiso=0,nKvi=0,nSobre=0;
   const movs=[];
@@ -782,9 +826,9 @@ function simular(){
   const kpi=(lbl,val,sub)=>'<div class="card kpi"><div class="lbl">'+lbl+'</div><div class="val num">'+val+'</div><div class="sub">'+sub+'</div></div>';
   let avisos='';
   if (Math.abs(P)>4) avisos+='<span class="badge b-ambar">FUERA DE GUARDRAIL: ±4%/ciclo — se aplicaría en '+ciclos+' ciclos (~'+(ciclos*3)+' semanas)</span> ';
-  if (nPiso) avisos+='<span class="badge b-rojo">'+nPiso.toLocaleString()+' SKUs quedarían con margen &lt;3% (piso)</span> ';
+  if (nPiso) avisos+='<span class="badge b-rojo">'+nPiso.toLocaleString()+' modelos quedarían con margen &lt;3% (piso)</span> ';
   if (nKvi && P>0) avisos+='<span class="badge b-ambar">incluye '+nKvi.toLocaleString()+' KVIs (política: no subir sin demanda confirmada)</span> ';
-  if (nSobre) avisos+='<span class="badge b-rojo">'+nSobre.toLocaleString()+' SKUs en sobrestock ≥12m (regla: no subir)</span> ';
+  if (nSobre) avisos+='<span class="badge b-rojo">'+nSobre.toLocaleString()+' modelos en sobrestock ≥12m (regla: no subir)</span> ';
   const filasM = movs.slice(0,20).map(m =>
     '<tr><td><span style="font-weight:600;color:var(--azul)">'+m[0]+'</span></td>'
     +'<td class="rng" style="font-size:11px;text-align:left">'+(m[1]||"—")+'</td>'
@@ -793,9 +837,9 @@ function simular(){
     +'<td class="num" style="color:'+(m[5]>=0?'var(--verde)':'var(--rojo)')+';font-weight:700">'+(m[5]>=0?'+':'')+usd0(m[5])+'/sem</td></tr>').join("");
   out.innerHTML =
     '<div class="kpis">'
-    + kpi("SKUs en el escenario", sel.length.toLocaleString(), (cods.size?'lista de códigos':(simProvSel.size? simProvSel.size+' proveedor(es)':'todo el catálogo evaluable')))
+    + kpi("Modelos en el escenario", sel.length.toLocaleString(), (cods.size?'lista de códigos':(simProvSel.size? simProvSel.size+' proveedor(es)':'todo el catálogo evaluable')))
     + kpi("Unidades/sem", Math.round(u0T).toLocaleString()+' → '+Math.round(u1T).toLocaleString(),
-          'con ε de cada SKU · '+(P>0?'−':'+')+Math.abs(100*(1-u1T/u0T)).toFixed(1)+'% volumen')
+          'con ε de cada modelo · '+(P>0?'−':'+')+Math.abs(100*(1-u1T/u0T)).toFixed(1)+'% volumen')
     + kpi("Ingreso neto/sem", '$'+Math.round(ing0T).toLocaleString()+' → $'+Math.round(ing1T).toLocaleString(),
           (ing1T>=ing0T?'+':'')+(100*(ing1T/ing0T-1)).toFixed(1)+'%')
     + kpi("Impacto en utilidad/sem", '<span style="color:'+col+'">'+(d>=0?'+':'')+usd0(d)+'</span>',
@@ -803,12 +847,12 @@ function simular(){
     + kpi("Impacto en utilidad/mes", '<span style="color:'+col+'">'+(d>=0?'+':'')+usd0(d*SEM_MES)+'</span>', '×4.345 semanas')
     + '</div>'
     + (avisos?'<div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap">'+avisos+'</div>':'')
-    + (nAws?'<div class="sec-s" style="padding:0 2px 8px">Contexto forecast AWS: para '+nAws.toLocaleString()+' de estos SKUs, AWS pronostica '+Math.round(awsT).toLocaleString()+' unidades el próximo mes (sin cambio de precio).</div>':'')
+    + (nAws?'<div class="sec-s" style="padding:0 2px 8px">Contexto forecast AWS: para '+nAws.toLocaleString()+' de estos modelos, AWS pronostica '+Math.round(awsT).toLocaleString()+' unidades el próximo mes (sin cambio de precio).</div>':'')
     + '<div class="card"><div class="sec-t">Los 20 más impactados (por |Δ utilidad|)</div>'
     + '<table><colgroup><col style="width:18%"><col style="width:26%"><col style="width:22%"><col style="width:16%"><col style="width:18%"></colgroup>'
     + '<thead><tr><th>Código</th><th>Proveedor</th><th>Precio</th><th>Unid/sem</th><th>Impacto en utilidad</th></tr></thead>'
     + '<tbody>'+filasM+'</tbody></table></div>'
-    + '<div class="sec-s" style="padding:8px 2px">La banda IC95 suma los extremos por SKU (supone errores de ε correlacionados — conservador). '
+    + '<div class="sec-s" style="padding:8px 2px">La banda IC95 suma los extremos por modelo (supone errores de ε correlacionados — conservador). '
     + 'El simulador no aplica pisos ni políticas: es una foto de elasticidad pura; el motor sí las aplica al recomendar.</div>';
 }
 function setDx(d){ dxAct = d;
@@ -883,7 +927,7 @@ function pintarD(){
     + " modelos" + (sel.length > 300 ? " (mostrando los 300 con más capital atrapado)" : "")
     + " · capital: " + usd0(capSel);
   // el monto del botón de la vista sigue a la SELECCIÓN (usuario 2026-08-01:
-  // al elegir categoría, el $$ debe ser el de los SKUs de esa categoría)
+  // al elegir categoría, el $$ debe ser el de los modelos de esa categoría)
   document.getElementById("v_dorm").textContent = "💤 Dormidos (2ª capa) · "
     + sel.length.toLocaleString() + " · " + usd0(capSel) + " atrapados"
     + (filtrado ? " (selección)" : "");
@@ -894,6 +938,7 @@ pintar();
             .replace("__DATOS__", json.dumps(datos, ensure_ascii=False))
             .replace("__FILAS__", json.dumps(filas, ensure_ascii=False))
             .replace("__FILAS2__", json.dumps(filas2, ensure_ascii=False))
+            .replace("__CORTE__", str(corte))
             .replace("__CAL__", json.dumps(cal_js))
             .replace("__TIENE_PROV__", "true" if tiene_prov else "false")
             .replace("__PROVS__", json.dumps(provs, ensure_ascii=False))

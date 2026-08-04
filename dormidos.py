@@ -15,10 +15,13 @@ Cómo (todo con datos locales):
   - Punto de comparación: la lista/margen/costo de su última época CON VENTAS
     (mediana de sus últimas 8 semanas con venta).
 
-RELOJ DE MUERTE EFECTIVA (usuario 2026-07-31): la edad de un dormido son sus
-semanas sin venta TENIENDO stock (`sem_muertas_stock`) — "los meses sin venta
-y sin stock no son dormidos". El calendario (`semanas_sin_venta`) queda
-informativo. La vista y la escalera de agresividad usan el reloj efectivo.
+RELOJ DE MUERTE EFECTIVA (usuario 2026-07-31; afinado 2026-08-04): la edad
+de un dormido son sus semanas sin venta con stock SUFICIENTE — dos capas:
+(1) disp_venta > 0 y (2) el disponible cubre ≥1 MES de su venta de época viva
+(evita clasificar como dormido lo que fue tema de DISPONIBILIDAD, no de
+precio; caso testigo DSMCW417/64G/GLE). El calendario queda informativo.
+Afinación futura aprobada: cruce por SUCURSAL (¿tenía stock donde más vende?)
+— requiere stock por almacén, hoy no extraído.
 
 Direcciones que emite:
   REACTIVAR              quedó caro ⇒ volver a su lista de época viva; con ≥6/12
@@ -286,18 +289,30 @@ def correr():
             continue
         ult_sem = con_venta.index.max()
         sem_sin_venta = int((semanas[-1] - np.datetime64(ult_sem)) / np.timedelta64(7, "D"))
-        # RELOJ DE MUERTE EFECTIVA (usuario 2026-07-31): solo cuentan las
-        # semanas sin venta TENIENDO stock — "los meses sin venta y sin stock
-        # no son dormidos". Este reloj gobierna la vista y la escalera de
-        # agresividad; el calendario (sem_sin_venta) queda informativo.
+        # RELOJ DE MUERTE EFECTIVA (usuario 2026-07-31, afinado 2026-08-04):
+        # solo cuentan las semanas sin venta con stock SUFICIENTE — dos capas:
+        #   1) disp_venta > 0, y
+        #   2) el disponible cubre ≥1 MES de su venta de época viva (caso
+        #      DSMCW417/64G/GLE: 27 pzas para un modelo de 28/sem es stock
+        #      testimonial — la venta pudo frenarse por DISPONIBILIDAD, no por
+        #      precio; el objetivo es no clasificar como dormido lo que fue
+        #      tema de entrega). El calendario (sem_sin_venta) queda informativo.
+        u_sem_era = float(con_venta.iloc[-8:].mean())
+        umbral_d = max(1.0, u_sem_era * 4.345)   # 1 mes de su venta viva
         sem_muertas = sem_sin_venta
         if cod in pv_disp.index:
             # recortar al corte del PANEL: existencias_sem corre ~1 semana
             # adelante y esa semana aún no sabe si hubo venta (ronda 3)
-            sil_d = pv_disp.loc[cod][(pv_disp.columns > ult_sem)
-                                     & (pv_disp.columns <= semanas[-1])]
+            # DESDE CUÁNDO hay stock (usuario 2026-08-04): la semana cuenta
+            # solo si el stock suficiente YA ESTABA desde la semana anterior —
+            # la semana que recibe la reposición no cuenta (si llegó el 30 de
+            # junio, junio no se toma; el snapshot es del lunes y el stock
+            # necesita estar el periodo completo + distribuirse a sucursales)
+            serie_d = pv_disp.loc[cod].fillna(0)
+            ok_d = (serie_d >= umbral_d) & (serie_d.shift(1) >= umbral_d)
+            sil_d = ok_d[(ok_d.index > ult_sem) & (ok_d.index <= semanas[-1])]
             if len(sil_d):
-                sem_muertas = int((sil_d.fillna(0) > 0).sum())
+                sem_muertas = int(sil_d.sum())
         meses_muertos = sem_muertas / 4.345
         u12 = float(su.iloc[-52:].fillna(0).sum())
         u24 = float(su.fillna(0).sum())
@@ -345,8 +360,7 @@ def correr():
                        and costo_prov_hoy >= costo_era * 1.05
                        and np.isfinite(costo_stock) and costo_stock <= costo_era * 1.03)
 
-        # venta de cuando aún vendía (para dimensionar qué se perdió)
-        u_sem_era = float(con_venta.iloc[-8:].mean())
+        # (u_sem_era ya calculado arriba para el umbral del reloj)
         cap = (stock * costo_era if np.isfinite(stock) and stock > 0
                and np.isfinite(costo_era) else 0)
 
@@ -550,10 +564,12 @@ def correr():
                         # stock (ronda 3): un recorte no se evalúa si el SKU
                         # pasó esas semanas sin inventario que vender
                         if cod in pv_disp.index:
-                            d_c = pv_disp.loc[cod][(pv_disp.columns > f_corte)
-                                                   & (pv_disp.columns <= semanas[-1])]
+                            s_c = pv_disp.loc[cod].fillna(0)
+                            ok_c = (s_c >= umbral_d) & (s_c.shift(1) >= umbral_d)
+                            d_c = ok_c[(ok_c.index > f_corte)
+                                       & (ok_c.index <= semanas[-1])]
                             if len(d_c):
-                                sem_corte = int((d_c.fillna(0) > 0).sum())
+                                sem_corte = int(d_c.sum())
             aplicado = max(0.0, 1 - precio_hoy / p0) if p0 > 0 else 0.0
             # objetivo por edad (el recorte del grupo puede adelantar el 1er peldaño)
             e_edad = sem_muertas

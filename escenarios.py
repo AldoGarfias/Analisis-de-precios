@@ -781,6 +781,88 @@ def main():
           f"{int(no_rota.sum())} no-rota, {n_sobre} sobrestock≥12m"
           f"{' | SIN datos de stock' if exist is None else ''}", flush=True)
     recos, esc = recomendar(est, bandas)
+    # 🪜 TOPE ACUMULADO ±10pts (usuario 2026-08-04, defaults aprobados):
+    # un modelo puede subir máx +10pts ACUMULADOS en ventana móvil de 12 meses,
+    # medidos contra su precio ANCLA = el precio ANTES del primer cambio
+    # APLICADO del motor en la ventana (registro monitoreo_cambios.csv — los
+    # cambios aplicados llevan etiqueta del motor en el campo comentario del
+    # ERP). RE-ANCLA POR COSTO: si el costo de reposición cambió ≥5% después
+    # de ese cambio (y el costo del stock lo siguió — hubo compra), el
+    # acumulado se reinicia desde el primer cambio posterior al movimiento de
+    # costo. EXENTOS: frenos por reabasto (temporales, se revierten) y la
+    # defensa de margen por costo (corre fuera del motor y puede romper tope).
+    # Hasta que se acepten decisiones el registro está vacío ⇒ no topa a nadie.
+    ruta_mon0 = os.path.join(os.path.dirname(DATA), "out", "monitoreo_cambios.csv")
+    n_tope = 0
+    if os.path.exists(ruta_mon0):
+        mon0 = pd.read_csv(ruta_mon0)
+        mon0 = mon0[(pd.to_datetime(mon0.fecha_aceptado)
+                     >= pd.Timestamp.today().normalize() - pd.Timedelta(days=365))
+                    & (mon0.cambio_pct > 0)].sort_values("fecha_aceptado")
+        if len(mon0):
+            # re-ancla por costo: semana del último salto ≥5% de costo_prov
+            # confirmado por el costo del stock en mano (≥3% en igual sentido)
+            resem = {}
+            if exist is not None and "costo_prov" in exist.columns:
+                cp = (exist.pivot_table(index="codigo", columns="semana",
+                                        values="costo_prov", aggfunc="max")
+                      .ffill(axis=1))
+                vs = (exist.pivot_table(index="codigo", columns="semana",
+                                        values="valor_stock", aggfunc="sum")
+                      if "valor_stock" in exist.columns else None)
+                et = (exist.pivot_table(index="codigo", columns="semana",
+                                        values="existencia", aggfunc="sum")
+                      if "existencia" in exist.columns else None)
+                cs = (vs / et.replace(0, np.nan)).ffill(axis=1) \
+                    if vs is not None and et is not None else None
+                for cod in mon0.codigo.unique():
+                    if cod not in cp.index:
+                        continue
+                    serie = cp.loc[cod].dropna()
+                    salto = serie.pct_change().abs() >= 0.05
+                    if salto.any():
+                        f_salto = salto[salto].index.max()
+                        compro = True
+                        if cs is not None and cod in cs.index:
+                            s2 = cs.loc[cod].dropna()
+                            pre = s2[s2.index < f_salto]
+                            post = s2[s2.index >= f_salto]
+                            compro = (len(pre) and len(post) and pre.iloc[-1] > 0
+                                      and abs(post.iloc[-1] / pre.iloc[-1] - 1) >= 0.03)
+                        if compro:
+                            resem[cod] = f_salto
+            anclas_ac = {}
+            for cod, d_ in mon0.groupby("codigo"):
+                d_ = d_[pd.to_datetime(d_.fecha_aceptado)
+                        >= pd.Timestamp(resem.get(cod, pd.Timestamp("2000-01-01")))]
+                if len(d_):
+                    anclas_ac[cod] = float(d_.precio_antes.iloc[0])
+            if anclas_ac:
+                anc_s = recos.codigo.map(anclas_ac)
+                rev0 = recos.revisar.fillna("")
+                tope_p = anc_s * 1.10
+                m_t = ((recos.direccion == "SUBIR") & anc_s.notna()
+                       & (recos.precio_sugerido > tope_p)
+                       & ~rev0.str.contains("frenar"))
+                # recorte al remanente; si el actual ya está en tope ⇒ MANTENER
+                m_full = m_t & (recos.precio_actual >= tope_p * 0.999)
+                m_clip = m_t & ~m_full
+                recos.loc[m_clip, "precio_sugerido"] = tope_p[m_clip].round(2)
+                recos.loc[m_clip, "cambio_pct"] = (100 * (tope_p[m_clip]
+                                                   / recos.loc[m_clip, "precio_actual"] - 1)).round(1)
+                recos.loc[m_clip, "revisar"] = ("tope acumulado +10pts (12m): paso "
+                                                "recortado al remanente")
+                recos.loc[m_full, "revisar"] = ("tope acumulado +10pts (12m) alcanzado: "
+                                                "esperar ventana o re-ancla por costo")
+                recos.loc[m_full, "precio_sugerido"] = recos.loc[m_full, "precio_actual"]
+                recos.loc[m_full, "cambio_pct"] = 0.0
+                recos.loc[m_full, "u_sem_proyectado"] = recos.loc[m_full, "u_sem_actual"]
+                recos.loc[m_full, "utilidad_sem_sugerido"] = recos.loc[m_full, "utilidad_sem_mantener"]
+                recos.loc[m_full, "direccion"] = "MANTENER"
+                n_tope = int(m_t.sum())
+    print(f"  🪜 tope acumulado +10pts/12m: {n_tope} modelos topados"
+          + ("" if n_tope else " (registro de aplicados vacío o sin alcanzar tope"
+             " — se activa al registrar cambios)"), flush=True)
     # 🌐 MEZCLA DE CANAL (usuario 2026-08-01, "Aplica las 4" punto 1 — evidencia
     # en docs/ANALISIS_CANAL_LINEA.md, 9,805 eventos pareados): el canal EN
     # LÍNEA acepta mejor las alzas chicas (retención 0.936 vs 0.868 en 2-5%).

@@ -75,8 +75,13 @@ imagen → piso de margen costo+3pts → abstención a baja confianza.
 6. Sello de corte + guardado local
 
 **Guardrails**: paso máx ±4pts por ciclo de 3 SEMANAS (un precio nunca se
-mueve dos semanas seguidas), piso costo+3pts, sobrestock ≥12m no sube,
-abstención a baja confianza (preferir no opinar a opinar mal).
+mueve dos semanas seguidas); tope ACUMULADO +10pts en ventana móvil de 12
+meses (ancla = precio antes del primer cambio aplicado; re-ancla cuando el
+costo real cambia ≥5% con compra); piso costo+3pts; sobrestock ≥12m no sube;
+abstención a baja confianza (preferir no opinar a opinar mal). Todo cambio
+aplicado en el ERP lleva la etiqueta `Motor de Precios v3 | ciclo <corte> |
+<±X%>` en el campo comentario (la trae el CSV del botón ⬇ del reporte) —
+esa etiqueta es la que alimenta el registro de aplicados y el tope acumulado.
 
 ### Segunda capa: `dormidos.py` (SKUs sin venta reciente, fuera del motor)
 
@@ -124,6 +129,11 @@ buscador) — el requisito de "detallado rápido". Regenerar tras cada corrida.
 - `ciclo.py emitir/cerrar` + `monitoreo.py aceptar --ciclo` (decisiones).
 - `seguimiento_frenos.py registrar` / `registrar-dormidos` tras cada corrida.
 - Export AWS Forecast la 1ª semana del mes: `aws_forecast.py <csv>`.
+- APLICAR precios: `aplicar.py <csv del botón ⬇> --aplicar` — POST al endpoint
+  auditado del ERP (/api/agent/cambiar-precios), SOLO el precio que cambia
+  (precio_nuevo1 o 3 según tipo_precio), dry-run por default, valida contra la
+  corrida vigente, y al éxito registra en monitoreo (medición + tope acumulado).
+  Credenciales: ERP_API_URL/ERP_API_KEY/ERP_ACTOR_EMAIL en .env.local.
 
 ### Cachés y estado (qué archivo escribe quién) — tabla completa en la ronda 4 del ledger de auditoría
 

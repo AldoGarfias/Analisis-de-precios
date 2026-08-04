@@ -77,7 +77,7 @@ distintas: lista ↔ PM, descuento ↔ vendedor), no excluyentes.
 
 - Palanca para elasticidad = **precio de LISTA** (administrado, poco endógeno);
   el descuento por trato es endógeno y solo se modela con el enfoque win-rate.
-- **Guardrails**: piso de margen costo+3pts, movimiento máx ±10pts (OJO: acumulado AÚN NO IMPLEMENTADO — decisión pendiente del usuario), paso máximo
+- **Guardrails**: piso de margen costo+3pts, movimiento máx +10pts ACUMULADOS en ventana móvil de 12 meses con re-ancla por costo real ≥5% (IMPLEMENTADO 2026-08-04; se activa cuando el registro de cambios aplicados tenga filas — los cambios aplicados llevan etiqueta 'Motor de Precios v3 | ciclo ...' en el campo comentario del ERP), paso máximo
   ±4pts POR CICLO DE 3 SEMANAS (cadencia definida por el negocio:
   un precio nunca se mueve dos semanas seguidas; aplicar poco → re-medir →
   repetir), mínimo de actividad para opinar, **sobrestock manda** (≥12 meses de

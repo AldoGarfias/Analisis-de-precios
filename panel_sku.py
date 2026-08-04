@@ -407,7 +407,7 @@ def cuerpo_sku(codigo, ctx, volver_html=""):
     </div>
   </div>"""
 
-    boton = (f'<button class="btn btn-pri">Aplicar {_usd(r.precio_sugerido)}</button>'
+    boton = (f'<button class="btn btn-pri" onclick="aplicarUno(\'{codigo}\', {r.precio_sugerido})">Aplicar {_usd(r.precio_sugerido)}</button>'
              if r.direccion != "MANTENER" else
              '<button class="btn" disabled>Sin acción este mes</button>')
 
