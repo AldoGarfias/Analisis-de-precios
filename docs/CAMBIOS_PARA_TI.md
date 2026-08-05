@@ -16,6 +16,23 @@ auditado ronda 4"). El zip `motor-precios-v3-entrega.zip` corresponde a
 
 ---
 
+## bcc0d03 — 2026-08-05 · Query de prueba de la API de BI con FROM obligatorio
+
+### 1. CÓDIGO: `probar()` de `api_bi.py` ahora lee `reporte_61`
+- **Qué**: el servidor de la API de BI cambió de regla (~2026-08): toda
+  consulta debe leer al menos una tabla de la allow-list; un `SELECT 1` sin
+  `FROM` regresa `400 sql_no_permitido`. La query de prueba de conexión pasó
+  de `SELECT 1 AS ok LIMIT 1` a `SELECT 1 AS ok FROM reporte_61 LIMIT 1`.
+- **Archivos**: `api_bi.py` (función `probar()`).
+- **Sin git**: reemplazar `api_bi.py` completo.
+
+### ⚠ PENDIENTE DEL LADO DEL SERVIDOR (para TI, no es cambio de código)
+- Detectado 2026-08-05: las tablas con backend **Redshift** (`reporte_61`,
+  `valor_inventario`) regresan `500 bi_no_disponible` con
+  `causa: acceso_bd_denegado`; la tabla MySQL (`v_bi_eventos_interacciones`)
+  responde bien. El servicio de la API perdió acceso a Redshift — revisar
+  credenciales/permisos del service account del lado del servidor.
+
 ## 8dbc29d — 2026-08-04 · Aplicador ERP, tope acumulado, reloj afinado
 
 ### 1. REGLA NUEVA: tope acumulado +10pts en 12 meses (con re-ancla por costo)
