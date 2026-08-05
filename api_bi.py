@@ -161,7 +161,9 @@ def tablas():
 def probar():
     t0 = time.time()
     ts = tablas()
-    df = q("SELECT 1 AS ok LIMIT 1")
+    # El server exige leer una tabla de la allow-list (regla nueva 2026-08):
+    # un SELECT sin FROM regresa 400 sql_no_permitido.
+    df = q("SELECT 1 AS ok FROM reporte_61 LIMIT 1")
     print(f"✓ CONEXIÓN OK ({time.time()-t0:.1f}s) — query de prueba: {df.ok.iloc[0]}",
           flush=True)
     return ts
