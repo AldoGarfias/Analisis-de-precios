@@ -26,12 +26,12 @@ auditado ronda 4"). El zip `motor-precios-v3-entrega.zip` corresponde a
 - **Archivos**: `api_bi.py` (función `probar()`).
 - **Sin git**: reemplazar `api_bi.py` completo.
 
-### ⚠ PENDIENTE DEL LADO DEL SERVIDOR (para TI, no es cambio de código)
+### ✅ RESUELTO — caída temporal del backend Redshift de la API
 - Detectado 2026-08-05: las tablas con backend **Redshift** (`reporte_61`,
-  `valor_inventario`) regresan `500 bi_no_disponible` con
-  `causa: acceso_bd_denegado`; la tabla MySQL (`v_bi_eventos_interacciones`)
-  responde bien. El servicio de la API perdió acceso a Redshift — revisar
-  credenciales/permisos del service account del lado del servidor.
+  `valor_inventario`) regresaban `500 bi_no_disponible` con
+  `causa: acceso_bd_denegado`; la tabla MySQL respondía bien (el service
+  account de la API había perdido acceso a Redshift). Restaurado el mismo
+  2026-08-05: las 3 tablas responden y `probar()` da ✓.
 
 ## 8dbc29d — 2026-08-04 · Aplicador ERP, tope acumulado, reloj afinado
 
