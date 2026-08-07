@@ -77,7 +77,12 @@ def token():
     if r.status_code == 307:
         raise RuntimeError("307: tu IP no está autorizada (red local SYSCOM) — "
                          "pedir a IT que la agregue")
-    r.raise_for_status()
+    if r.status_code >= 400:
+        # el detalle del server (invalid_client, client_id desconocido, etc.)
+        # es la diferencia entre "secret mal pegado" y "cliente sin alta"
+        cid = env.get("BI_CLIENT_ID", CLIENT_ID_DEFAULT)
+        raise RuntimeError(f"{r.status_code} al canjear token "
+                           f"(client_id={cid}): {r.text[:300]}")
     tok = r.json()["access_token"]
     _guardar_env("BI_TOKEN", tok)
     print(f"✓ token obtenido y guardado en .env.local (expira en "
