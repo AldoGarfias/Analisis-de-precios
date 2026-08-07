@@ -423,6 +423,8 @@ if __name__ == "__main__":
         try:
             import extract_competencia
             extract_competencia.correr()
+            import competencia
+            competencia.actualizar()   # BD por competidor + cambios del día
         except (Exception, SystemExit) as e:
             fallos.append(f"competencia: {str(e)[:80]}")
             print(f"competencia: {str(e)[:80]}", flush=True)

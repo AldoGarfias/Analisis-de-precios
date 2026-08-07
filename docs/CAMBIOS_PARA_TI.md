@@ -18,6 +18,20 @@ auditado ronda 4"). El zip `motor-precios-v3-entrega.zip` corresponde a
 
 ## (pendiente hash) — 2026-08-07 · Precios de la COMPETENCIA (feed de correo)
 
+### 0. NUEVO MÓDULO: `competencia.py` — registro por competidor + cambios
+- **Qué** (usuario: "primero un registro por competidor, después identificar
+  cambios, antes de la comparativa"): (1) `consolidar` → una BD parquet POR
+  COMPETIDOR en `data/competencia/db/<fuente>.parquet` (historia modelo×fecha,
+  idempotente) con **precios convertidos a USD** cuando la moneda es
+  MXN/pesos (tipo de cambio de la SEMANA del dato, del panel; columnas
+  `precio_venta_usd`/`precio_lista_usd` junto a las nativas); (2) `cambios` →
+  detección por fechas consecutivas EN MONEDA NATIVA (el FX no es un cambio):
+  PRECIO SUBIÓ/BAJÓ ≥1%, ALTA, STOCKOUT, REABASTECIDO →
+  `data/competencia/cambios.parquet` + `out/competencia_cambios.csv` (7 días).
+  Corre a diario en la cadena de 8:30 tras el extractor. La comparativa con
+  nuestros modelos queda EXPRESAMENTE pendiente de decisión.
+- **Archivos**: `competencia.py` (nuevo), `seguimiento_frenos.py` (cadena).
+
 ### 1. NUEVO MÓDULO: `extract_competencia.py`
 - **Qué**: extractor IMAP solo-lectura del feed diario de correo
   ("CSVs de distribuidores" de saadclaw7@gmail.com): baja los CSV adjuntos de
