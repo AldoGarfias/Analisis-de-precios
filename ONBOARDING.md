@@ -34,6 +34,16 @@ diseño: `CLAUDE.md`. Esta guía es el mapa de entrada.
   costo_prov, costo_total_dolares, proveedor, remate, clasificacion`.
 - **`cat_almacen`** (`vendible=1` = almacenes de venta) — SOLO vive en Aurora;
   cacheado en `data/cat_almacen_vendible.json`.
+- **Feed de COMPETENCIA por correo** (3ª fuente, 2026-08-07): correo diario
+  "CSVs de distribuidores" (saadclaw7@gmail.com) con precios de 12
+  competidores (tvc, ct, tecnosinergia, cva, absa, alcione, exel, adises,
+  portenntum, luguer, fibremex, dextra; ~58K filas/día). Se baja por IMAP
+  solo-lectura (`extract_competencia.py`) y se consolida en UNA BD POR
+  COMPETIDOR (`competencia.py` → `data/competencia/db/<fuente>.parquet`,
+  con precios convertidos a USD por el tc semanal del panel) + detección
+  diaria de cambios (subió/bajó ≥1% en moneda nativa, altas, stockouts →
+  `out/competencia_cambios.csv`). La comparativa contra nuestros modelos
+  está PENDIENTE por decisión del usuario.
 - Reglas de migración (no negociables): NULL→'', limpiar U+200B/mojibake en
   `codigo`, **jamás filtrar por caracteres acentuados** (la API rompe la í:
   "l?nea").
@@ -41,7 +51,9 @@ diseño: `CLAUDE.md`. Esta guía es el mapa de entrada.
 Credenciales: SOLO en `.env.local` junto a `db.py` (plantilla `.env.example`;
 variables: `DB_HOST_READ, DB_PORT, DB_USER, DB_PASSWORD, DB_DATABASE,
 BI_CLIENT_ID, BI_CLIENT_SECRET, BI_TOKEN` — el token de BI dura 365 días y el
-cliente lo reescribe en `.env.local`, que necesita permiso de escritura).
+cliente lo reescribe en `.env.local`, que necesita permiso de escritura;
+`GMAIL_USER, GMAIL_APP_PASSWORD` — contraseña de aplicación de Google para el
+feed de competencia; `ERP_API_URL, ERP_API_KEY, ERP_ACTOR_EMAIL` — aplicador).
 
 ## 2. CAPAS Y ORDEN PRECISO
 
@@ -111,10 +123,11 @@ descuento del vendedor. Estudios: `docs/ANALISIS_CANAL_LINEA.md`,
    costo", expira 21 días)
 4. Monitoreo de decisiones aplicadas (checkpoints 7d, censura contra lista
    administrada, veredictos 4/8/12 sem, bandera 🚩 descuento-amortiguador)
-5. Vigilante del API de BI
-6. [lunes] checkpoint semanal del ciclo + censo remate/clasificación + mezcla
+5. Competencia: extractor del feed de correo + BD por competidor + cambios
+6. Vigilante del API de BI
+7. [lunes] checkpoint semanal del ciclo + censo remate/clasificación + mezcla
    de canal + reporte de fuga de descuentos
-7. [día ≤10] examen mensual de forecasts + archivo EX-ANTE del mes nuevo
+8. [día ≤10] examen mensual de forecasts + archivo EX-ANTE del mes nuevo
 
 ### Cron nocturno 0:00 — `genera_paneles.py`
 
