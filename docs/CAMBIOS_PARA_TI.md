@@ -16,7 +16,31 @@ auditado ronda 4"). El zip `motor-precios-v3-entrega.zip` corresponde a
 
 ---
 
-## (pendiente hash) — 2026-08-07 · Precios de la COMPETENCIA (feed de correo)
+## 49491ba — 2026-08-07 · Canje de token de la API BI con error legible
+
+### ⚠ AVISO A TI — credenciales de la API BI rechazadas en esta instalación
+- **Qué pasa**: `POST /oauth/token` con `client_id=bi-colab-prod` regresa
+  `401 {"error":"Credenciales inválidas"}` (verificado 2026-08-07). NO es la
+  caída recurrente de Redshift (esa da `500 bi_no_disponible` en consultas,
+  ya autenticado) ni tema de IP (eso regresa 307; el endpoint sí respondió).
+  El secret en `.env.local` tiene forma plausible (47 caracteres) — o fue
+  rotado/revocado del lado del servidor, o esta instalación necesita su
+  propia alta de cliente.
+- **Qué se necesita de TI/IT**: confirmar si el secret de `bi-colab-prod`
+  sigue vigente y, si no, emitir uno nuevo (o un client nuevo para esta
+  máquina). Con el secret correcto en `.env.local`, el alta se completa con
+  `./.venv/bin/python api_bi.py probar` (canjea y guarda el token de 365
+  días, y hace `SELECT ... FROM reporte_61 LIMIT 1`).
+
+### 1. CÓDIGO: `token()` de `api_bi.py` reporta el detalle del error
+- **Qué**: un 4xx al canjear el token moría en `raise_for_status()` sin
+  contexto; ahora el error incluye status, `client_id` usado y el cuerpo de
+  la respuesta del servidor (p.ej. `Credenciales inválidas`), que distingue
+  un secret mal pegado de un cliente sin alta. El secret jamás se imprime.
+- **Archivos**: `api_bi.py` (función `token()`).
+- **Sin git**: reemplazar `api_bi.py` completo.
+
+## 91a0838 + 3338a69 — 2026-08-07 · Precios de la COMPETENCIA (feed de correo)
 
 ### 0. NUEVO MÓDULO: `competencia.py` — registro por competidor + cambios
 - **Qué** (usuario: "primero un registro por competidor, después identificar
