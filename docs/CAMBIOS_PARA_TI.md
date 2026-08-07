@@ -18,7 +18,14 @@ auditado ronda 4"). El zip `motor-precios-v3-entrega.zip` corresponde a
 
 ## 49491ba — 2026-08-07 · Canje de token de la API BI con error legible
 
-### ⚠ AVISO A TI — credenciales de la API BI rechazadas en esta instalación
+### ✅ RESUELTO (2026-08-07 tarde) — credenciales restauradas, login completado
+- El canje volvió a funcionar (token nuevo de 365 días emitido y guardado;
+  `probar()` ✓ 1.4s). PERO al autenticar reapareció el problema RECURRENTE:
+  `reporte_61` responde OK y `valor_inventario` regresa
+  `500 acceso_bd_denegado` (el ping-pong de GRANTs de siempre — ver entrada
+  bcc0d03). El pendiente estructural con TI sigue siendo ese.
+
+### (histórico) AVISO A TI — credenciales de la API BI rechazadas en esta instalación
 - **Qué pasa**: `POST /oauth/token` con `client_id=bi-colab-prod` regresa
   `401 {"error":"Credenciales inválidas"}` (verificado 2026-08-07). NO es la
   caída recurrente de Redshift (esa da `500 bi_no_disponible` en consultas,
