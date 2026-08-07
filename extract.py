@@ -360,6 +360,79 @@ def extraer_proveedores(dias=45):
           f"{modal.proveedor.nunique()} proveedores | {time.time()-t0:.0f}s", flush=True)
 
 
+def extraer_descripciones(dias=365):
+    """Censo codigo→descripcion desde reporte_61 (últimos N días, por día).
+
+    Los parquets de ventas no traen `descripcion` (se extrajeron con COLS sin
+    ella); la descripción es un atributo estable del SKU, así que basta con la
+    descripción MODAL de las ventas recientes por código — no amerita re-extraer
+    24 meses. `reporte_61` guarda algunas con entidades HTML crudas; se
+    normalizan aquí (mismo patrón que proveedores).
+    Salida: data/reporte61/descripciones.parquet (codigo, descripcion).
+    """
+    holder = _Con()
+    pares = {}
+    d = date.today() - timedelta(days=dias)
+    t0 = time.time()
+    try:
+        while d < date.today():
+            sig = d + timedelta(days=1)
+            _, filas = _query_reintentos(
+                holder,
+                f"SELECT /*+ MAX_EXECUTION_TIME({MAX_MS}) */ codigo, descripcion, COUNT(*) "
+                f"FROM {TABLA} WHERE fecha >= %s AND fecha < %s AND estatus='Activa' "
+                "AND descripcion IS NOT NULL AND descripcion <> '' "
+                "GROUP BY codigo, descripcion",
+                (d.isoformat(), sig.isoformat()), etiqueta=f"desc {d}")
+            for cod, des, n in filas:
+                if des:
+                    pares[(cod, des)] = pares.get((cod, des), 0) + n
+            d = sig
+    finally:
+        holder.close()
+    import html as _html
+    df = pd.DataFrame([(c, _html.unescape(str(des)), n) for (c, des), n in pares.items()],
+                      columns=["codigo", "descripcion", "n"])
+    modal = df.sort_values("n", ascending=False).drop_duplicates("codigo")[["codigo", "descripcion"]]
+    os.makedirs(DATA, exist_ok=True)
+    ruta = os.path.join(DATA, "descripciones.parquet")
+    modal.to_parquet(ruta, index=False)
+    print(f"descripciones.parquet: {len(modal):,} códigos | "
+          f"{len(pares):,} pares codigo-descripcion | {time.time()-t0:.0f}s", flush=True)
+
+
+def extraer_catalogo_descripciones():
+    """Catálogo codigo→descripcion/marca completo desde `2015epcom.cat_art&iacute;culos`.
+
+    `descripciones.parquet` (censo de ventas) solo alcanza a los productos que se
+    vendieron en la ventana; `cat_art&iacute;culos` cubre el 100% del catálogo ERP
+    (~167K códigos), incluidos los que no tienen movimiento reciente. Útil para la
+    capa 2 de validación Qwen (descripciones SYSCOM).
+    Salidas: data/reporte61/catalogo_descripciones.parquet (codigo, descripcion, marca).
+    """
+    holder = _Con()
+    import html as _html
+    t0 = time.time()
+    try:
+        cols, filas = _query_reintentos(
+            holder,
+            "SELECT `c&oacute;digo_art&iacute;culo`, `desc_art&iacute;culo1`, `marca` "
+            "FROM `2015epcom`.`cat_art&iacute;culos`",
+            None, etiqueta="cat_artículos")
+        df = pd.DataFrame(filas, columns=["codigo", "descripcion", "marca"])
+        df["codigo"] = df.codigo.astype(str).str.strip()
+        df["descripcion"] = df.descripcion.map(lambda s: _html.unescape(str(s)))
+        df["marca"] = df.marca.map(lambda s: _html.unescape(str(s)))
+        df = df[df.codigo != ""].drop_duplicates("codigo")
+    finally:
+        holder.close()
+    os.makedirs(DATA, exist_ok=True)
+    ruta = os.path.join(DATA, "catalogo_descripciones.parquet")
+    df.to_parquet(ruta, index=False)
+    print(f"catalogo_descripciones.parquet: {len(df):,} códigos | "
+          f"{time.time()-t0:.0f}s", flush=True)
+
+
 def _defaults():
     """Últimos 3 meses hasta el mes actual (según el reloj del sistema)."""
     hoy = date.today()
@@ -380,6 +453,10 @@ if __name__ == "__main__":
         extraer_kits(ini, fin)
     elif len(sys.argv) >= 2 and sys.argv[1] == "proveedores":
         extraer_proveedores(int(sys.argv[2]) if len(sys.argv) >= 3 else 45)
+    elif len(sys.argv) >= 2 and sys.argv[1] == "descripciones":
+        extraer_descripciones(int(sys.argv[2]) if len(sys.argv) >= 3 else 365)
+    elif len(sys.argv) >= 2 and sys.argv[1] == "catalogo_descripciones":
+        extraer_catalogo_descripciones()
     else:
         if len(sys.argv) >= 3:
             ini, fin = sys.argv[1], sys.argv[2]

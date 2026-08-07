@@ -16,6 +16,24 @@ auditado ronda 4"). El zip `motor-precios-v3-entrega.zip` corresponde a
 
 ---
 
+## (este commit) — 2026-08-07 · Matching SYSCOM ↔ competidores (capas 3-5)
+
+### NUEVO: cruce de modelos de la competencia con el catálogo SYSCOM
+- **Qué**: sobre el registro por competidor, tres capas de matching:
+  Capa 3 en `competencia.py match_syscom` (EXACTO tras normalizar /
+  FUZZY_ALTO ≥0.75 / FUZZY_MEDIO ≥0.60, TF-IDF n-gramas + RapidFuzz);
+  Capas 4-5 por TEXTO (TF-IDF + SBERT) restringidas a códigos ACTIVOS
+  (`activos.py` → codigos_activos.parquet, venta en los últimos 3 meses);
+  y `sys_lista.py` que une todo en la lista final de pares
+  (distribuidor, modelo_competidor) → modelo_syscom con vía y score
+  (prioridad: EXACTO > texto > fuzzy). Salidas:
+  `data/competencia/syscom_vs_distribuidores.parquet` +
+  `out/syscom_vs_distribuidores.csv`. `extract.py`: helper de apoyo (+77 líneas).
+- **Archivos**: `competencia.py`, `activos.py` (nuevo), `sys_lista.py`
+  (nuevo), `extract.py`.
+- Nota: esto es el CIMIENTO de la comparativa de precios vs competencia,
+  que sigue pendiente de decisión del usuario como regla del motor.
+
 ## 49491ba — 2026-08-07 · Canje de token de la API BI con error legible
 
 ### ✅ RESUELTO (2026-08-07 tarde) — credenciales restauradas, login completado
