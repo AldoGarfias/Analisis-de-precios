@@ -419,6 +419,13 @@ if __name__ == "__main__":
         except (Exception, SystemExit) as e:
             fallos.append(f"monitoreo: {str(e)[:80]}")
             print(f"monitoreo: {str(e)[:60]}", flush=True)
+        # PRECIOS DE COMPETENCIA: feed diario de correo (aprobado 2026-08-07)
+        try:
+            import extract_competencia
+            extract_competencia.correr()
+        except (Exception, SystemExit) as e:
+            fallos.append(f"competencia: {str(e)[:80]}")
+            print(f"competencia: {str(e)[:80]}", flush=True)
         # vigilante de la API de BI: avisa cuando habiliten tablas nuevas
         try:
             import api_bi

@@ -16,6 +16,26 @@ auditado ronda 4"). El zip `motor-precios-v3-entrega.zip` corresponde a
 
 ---
 
+## (pendiente hash) — 2026-08-07 · Precios de la COMPETENCIA (feed de correo)
+
+### 1. NUEVO MÓDULO: `extract_competencia.py`
+- **Qué**: extractor IMAP solo-lectura del feed diario de correo
+  ("CSVs de distribuidores" de saadclaw7@gmail.com): baja los CSV adjuntos de
+  11 distribuidores (tvc, tecnosinergia, ct, exel, adises, cva, portenntum,
+  absa, alcione, luguer, fibremex, dextra) a `data/competencia/` (~58K
+  filas/día, esquema unificado: modelo, marca, precio_lista, descuento_pct,
+  precio_venta, moneda, existencia, url). Idempotente; histórico desde
+  2026-07-21. Agregado al cron diario de 8:30 (recolección solamente —
+  NINGUNA regla del motor cambia todavía).
+- **Credenciales**: `GMAIL_USER` + `GMAIL_APP_PASSWORD` (contraseña de
+  aplicación de Google) en `.env.local` — jamás en código.
+- **Archivos**: `extract_competencia.py` (nuevo), `seguimiento_frenos.py`
+  (paso en la cadena diaria), `.env.example`.
+- **Primer cruce medido** (2026-08-07): 842 modelos del motor con precio de
+  competencia por match exacto de nombre; gap mediano de nuestro NETO vs el
+  mejor competidor: +1.6% (46% más baratos). De los 339 SUBIR cruzados, tras
+  el +4% el 38% seguiría ≤ competencia y el 31% quedaría >10% arriba.
+
 ## bcc0d03 — 2026-08-05 · Query de prueba de la API de BI con FROM obligatorio
 
 ### 1. CÓDIGO: `probar()` de `api_bi.py` ahora lee `reporte_61`
