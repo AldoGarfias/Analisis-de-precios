@@ -33,6 +33,15 @@ auditado ronda 4"). El zip `motor-precios-v3-entrega.zip` corresponde a
   marca): EXACTO 88% ✓ · FUZZY_ALTO 60% · texto TF-IDF 4% · SBERT 2% —
   las capas de texto NO sirven para pares de precio (quedan como sugerencia
   de revisión); pendientes aprobar: candados marca+|gap|≤60% sobre EXACTOS.
+- **CARRIL VECTOR (2026-08-10, decisión del usuario)**: el mapa de rivales NO
+  acota — es solo el carril de alta confianza. Para cualquier otra marca, el
+  carril VECTOR: mismo bloqueo de atributos + ranking por DESCRIPCIÓN
+  VECTORIZADA (SBERT, solo dentro del bloque — su zona honesta) + cercanía de
+  SUBTOTAL como doble firma; nivel EQUIVALENTE exige sim ≥0.55 Y |gap| ≤60%.
+  Resultado: 118 → 447 pares (266 firmes por vector, p.ej. Uniview↔Hikvision
+  sim 0.80 gap ±1%, Uniarch↔HiLook), 120 avisos de rival >10% más barata.
+  Dependencias: sentence-transformers/torch (agregar a requirements como
+  opcionales de matching).
 - **Archivos**: `equivalentes.py` (nuevo).
 
 ## (este commit) — 2026-08-07 · Matching SYSCOM ↔ competidores (capas 3-5)

@@ -19,3 +19,7 @@ pyfixest           # PPML (fepois) — prioridad #1 del v3
 scikit-learn       # HistGradientBoosting
 requests
 joblib
+
+# opcionales — solo capas de matching de competencia
+rapidfuzz
+sentence-transformers

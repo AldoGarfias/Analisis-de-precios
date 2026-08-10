@@ -96,17 +96,31 @@ def correr():
     C = C.dropna(subset=["tipo", "mp"])
     print(f"competencia con atributos: {len(C):,}", flush=True)
 
-    # BLOQUEO: mismo tipo+mp+tec, lente ±0.4mm, marca RIVAL
+    # EMBEDDINGS (una sola vez, ~2.3K textos): el vector solo RANKEA dentro
+    # del bloque de atributos — jamás matchea en catálogo abierto (medido:
+    # 2% de precisión suelto; dentro del bloque es su zona honesta)
+    from sentence_transformers import SentenceTransformer
+    st = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
+    S = S.reset_index(drop=True)
+    C = C.reset_index(drop=True)
+    emb_s = st.encode(S.descripcion.astype(str).tolist(), normalize_embeddings=True,
+                      show_progress_bar=False)
+    emb_c = st.encode(C.nombre.astype(str).tolist(), normalize_embeddings=True,
+                      show_progress_bar=False)
+
+    # DOS CARRILES (usuario 2026-08-10): RIVAL (mapa explícito, alta confianza)
+    # y VECTOR (abierto a cualquier marca distinta: descripción vectorizada +
+    # cercanía de SUBTOTAL como doble firma de seguridad)
     pares = []
-    S_idx = {k: g for k, g in S.groupby(["tipo", "mp", "tec"])}
-    for x in C.itertuples():
-        riv = RIVALES.get(x.marca_n)
-        if not riv:
+    S_idx = {k: g.index for k, g in S.groupby(["tipo", "mp", "tec"])}
+    for i, x in enumerate(C.itertuples()):
+        idx = S_idx.get((x.tipo, x.mp, x.tec))
+        if idx is None:
             continue
-        g = S_idx.get((x.tipo, x.mp, x.tec))
-        if g is None:
-            continue
-        g2 = g[g.marca_n.isin(riv)]
+        g = S.loc[idx]
+        riv = RIVALES.get(x.marca_n, set())
+        via = "RIVAL" if len(g[g.marca_n.isin(riv)]) else "VECTOR"
+        g2 = g[g.marca_n.isin(riv)] if via == "RIVAL" else g[g.marca_n != x.marca_n]
         # gama debe COINCIDIR (anticorrosión/motorizado no sustituye estándar)
         g2 = g2[g2.gama == x.gama]
         if x.mm is not None:
@@ -115,10 +129,15 @@ def correr():
             g2 = g2[(g2.mm.notna()) & ((g2.mm - x.mm).abs() <= 1.2)]
         if g2.empty:
             continue
-        # ranking: cercanía de PRECIO (primaria) + cercanía de lente (desempate)
+        # ranking: cercanía de PRECIO + lente; en carril VECTOR se suma la
+        # similitud SEMÁNTICA de la descripción (doble firma precio+vector)
         cerc = ((np.log(g2.neto_prom / x.precio_venta_usd)).abs()
                 + (0.10 * (g2.mm - x.mm).abs().fillna(0) if x.mm is not None else 0))
+        if via == "VECTOR":
+            sim = emb_s[g2.index] @ emb_c[i]
+            cerc = cerc + (1.0 - sim)          # menor = mejor en ambas firmas
         mejor = g2.loc[cerc.idxmin()]
+        sim_mejor = float(emb_s[cerc.idxmin()] @ emb_c[i])
         pares.append({
             "fuente": x.fuente, "modelo_comp": x.modelo, "marca_comp": x.marca_n,
             "nombre_comp": str(x.nombre)[:80], "precio_comp_usd": round(x.precio_venta_usd, 2),
@@ -128,11 +147,16 @@ def correr():
             "tipo": x.tipo, "mp": x.mp, "mm": x.mm, "tec": x.tec,
             "gap_pct": round(100 * (x.precio_venta_usd / float(mejor.neto_prom) - 1), 1),
             "cercania_precio": round(float(cerc.min()), 3),
+            "via": via, "sim_vector": round(sim_mejor, 3),
         })
     E = pd.DataFrame(pares)
     if len(E):
-        # |gap|>60% entre "equivalentes" casi siempre = gamas distintas ⇒ DUDOSO
-        E["nivel"] = np.where(E.gap_pct.abs() > 60, "DUDOSO", "EQUIVALENTE")
+        # |gap|>60% = gamas distintas ⇒ DUDOSO; el carril VECTOR además exige
+        # similitud semántica ≥0.55 (doble firma: si el vector o el precio
+        # dudan, el par no es dato firme)
+        E["nivel"] = np.where(E.gap_pct.abs() > 60, "DUDOSO",
+                     np.where((E.via == "VECTOR") & (E.sim_vector < 0.55),
+                              "DUDOSO", "EQUIVALENTE"))
         E = E.sort_values("cercania_precio")
     E.to_parquet(os.path.join(COMP, "equivalentes.parquet"), index=False)
     E.to_csv(os.path.join(BASE, "out", "competencia_equivalentes.csv"), index=False)
