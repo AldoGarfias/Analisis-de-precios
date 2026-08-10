@@ -16,6 +16,25 @@ auditado ronda 4"). El zip `motor-precios-v3-entrega.zip` corresponde a
 
 ---
 
+## (este commit) — 2026-08-10 · EQUIVALENTES entre marcas rivales (piloto)
+
+### NUEVO: `equivalentes.py` — sustitutos entre marcas (Hikvision↔Dahua, etc.)
+- **Qué** (usuario: "la competencia también vende marcas que compiten de
+  frente; quiero el aviso 'TVC vende la domo Dahua equivalente más barata'"):
+  capa SEPARADA del matching de identidad — (1) atributos duros por regex de
+  ambos lados (tipo domo/bala/turret/ptz/nvr/dvr, MP, lente mm, tecnología
+  ip/turbohd/hdcvi); (2) BLOQUEO mismo tipo+MP+tec, lente ±0.4mm, marca RIVAL
+  (mapa explícito ampliable); (3) ranking por CERCANÍA DE PRECIO (los
+  sustitutos reales se parecen hasta en precio — idea del usuario). Etiqueta
+  SIEMPRE "EQUIVALENTE", jamás se mezcla con pares EXACTOS. Piloto cámaras:
+  119 pares, 27 con la rival >10% más barata. Salidas:
+  data/competencia/equivalentes.parquet + out/competencia_equivalentes.csv.
+- **Precisión medida del matching general** (2026-08-10, juez = acuerdo de
+  marca): EXACTO 88% ✓ · FUZZY_ALTO 60% · texto TF-IDF 4% · SBERT 2% —
+  las capas de texto NO sirven para pares de precio (quedan como sugerencia
+  de revisión); pendientes aprobar: candados marca+|gap|≤60% sobre EXACTOS.
+- **Archivos**: `equivalentes.py` (nuevo).
+
 ## (este commit) — 2026-08-07 · Matching SYSCOM ↔ competidores (capas 3-5)
 
 ### NUEVO: cruce de modelos de la competencia con el catálogo SYSCOM
