@@ -280,6 +280,19 @@ def correr():
         print("  (snapshot sin columnas de costo: análisis histórico de costos "
               "pendiente de la re-extracción)", flush=True)
 
+    # cambios aplicados POR EL MOTOR (logs del aplicador): solo sobre esos
+    # el motor puede sugerir revertir/subir un precio bajo (usuario 2026-08-10)
+    aplicados_motor = set()
+    for _ra in glob.glob(os.path.join(BASE, "out", "aplicaciones", "*.csv")):
+        try:
+            _da = pd.read_csv(_ra)
+            if "modelo" in _da.columns:
+                ok_ = _da.get("status", pd.Series(dtype=str)).astype(str).eq("APLICADO")                     | pd.to_numeric(_da.get("http", pd.Series(dtype=float)),
+                                    errors="coerce").lt(300)
+                aplicados_motor |= set(_da.loc[ok_, "modelo"].astype(str))
+        except Exception:
+            pass
+
     filas, n_mimc = [], 0
     for cod in dormidos:
         su = u.loc[cod]
@@ -637,6 +650,20 @@ def correr():
                             f" OJO: la evidencia global ({txt_glob}) dice que el recorte "
                             "rara vez revive por sí solo — acompañar con acción comercial."))
 
+        # EL MOTOR NO SUGIERE SUBIR PRECIOS QUE ÉL NO BAJÓ (usuario 2026-08-10,
+        # caso DSD4440FOBKA: recorte externo de -42% dejó la lista bajo el piso
+        # y la regla empujaba a subir). Si el sugerido queda ARRIBA del vigente
+        # y el recorte actual no fue aplicado por el motor: se ACLARA, pero el
+        # sugerido se queda en el precio vigente — revertir un recorte ajeno
+        # es decisión comercial, no del motor. (El modelo sigue en la vista.)
+        if np.isfinite(p_sug) and np.isfinite(precio_hoy) \
+                and p_sug > precio_hoy * 1.001 and cod not in aplicados_motor:
+            expl += (f" AVISO: la regla pediría subir a ${p_sug:,.2f}, pero el "
+                     f"precio bajo vigente (${precio_hoy:,.2f}) viene de un "
+                     f"recorte que NO hizo el motor — no se sugiere subir "
+                     f"(revertirlo es decisión comercial); queda el aviso.")
+            p_sug = precio_hoy
+
         # venta mezclada CON stock: el diagnóstico de precio aplica normal,
         # pero el stock no puede esperar al siguiente proyecto — advertirlo
         if proy12 > 0 and np.isfinite(stock) and stock > 0:
@@ -680,10 +707,14 @@ def correr():
             "capital_atrapado": (0 if direc == "VENDE POR PRESENTACIÓN"
                                  else round(stock * costo_era, 0)
                                  if np.isfinite(stock) and stock > 0 else 0),
+            "valor_inventario": (0 if direc == "VENDE POR PRESENTACIÓN"
+                                 else round(stock * (costo_stock if np.isfinite(costo_stock)
+                                                     and costo_stock > 0 else costo_era), 0)
+                                 if np.isfinite(stock) and stock > 0 else 0),
             "diagnostico": dx,
         })
 
-    df = pd.DataFrame(filas).sort_values("capital_atrapado", ascending=False)
+    df = pd.DataFrame(filas).sort_values("valor_inventario", ascending=False)
     ruta = os.path.join(BASE, "out", "segunda_capa_dormidos.csv")
     df.to_csv(ruta, index=False)
 

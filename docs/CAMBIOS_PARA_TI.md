@@ -16,6 +16,22 @@ auditado ronda 4"). El zip `motor-precios-v3-entrega.zip` corresponde a
 
 ---
 
+## (este commit) — 2026-08-10 · Dormidos: no subir recortes ajenos + orden por valor de inventario
+
+### REGLA NUEVA: el motor NO sugiere subir precios que él no bajó
+- **Qué** (usuario, caso DSD4440FOBKA: recorte externo de −42% dejó la lista
+  bajo el piso costo+3 y la regla empujaba a subir a $2,258): si el sugerido
+  de dormidos queda ARRIBA del precio vigente y el recorte actual NO fue
+  aplicado por el motor (registro `out/aplicaciones/*.csv`), el sugerido se
+  queda en el precio vigente y la explicación ACLARA ("la regla pediría subir
+  a $X, pero el precio bajo viene de un recorte que NO hizo el motor — 
+  revertirlo es decisión comercial"). Aplica a REVERTIR de cadencia, ajuste a
+  piso y REABASTECIDO. El modelo SIGUE apareciendo en la vista.
+- **Orden de dormidos**: por VALOR DEL INVENTARIO (stock × costo en mano,
+  fallback costo de época viva; columna nueva `valor_inventario`), mayor a
+  menor — antes capital atrapado a costo de época viva.
+- **Archivos**: `dormidos.py`, `reporte_top.py`.
+
 ## (este commit) — 2026-08-10 · Aplicar desde DORMIDOS
 
 ### Botón 🚀 Aplicar en la vista de dormidos + validación propia en el puente

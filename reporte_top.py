@@ -260,7 +260,9 @@ def generar(n_paneles=30, n_top=200):
         dd = dd[(dd[col_reloj] >= 8) & (dd.stock_venta.fillna(0) > 0)]
         print(f"  dormidos en vista: {len(dd):,} de {n_antes:,} "
               f"(enfoque ≥8 sem MUERTAS CON STOCK y stock vendible hoy)", flush=True)
-        dd = dd.sort_values("capital_atrapado", ascending=False)
+        col_orden = ("valor_inventario" if "valor_inventario" in dd.columns
+                     else "capital_atrapado")
+        dd = dd.sort_values(col_orden, ascending=False)
         n_dorm, cap_dorm = len(dd), float(dd.capital_atrapado.sum())
         # detallado embebido para los 100 dormidos de mayor capital atrapado
         dorm_panel = set()
@@ -488,7 +490,7 @@ def generar(n_paneles=30, n_top=200):
   <div class="card">
     <div class="sec-t">Dormidos — 2ª capa <span id="contadorD" style="color:var(--gris);font-weight:400"></span></div>
     <div class="sec-s">Modelos con historia que dejaron de vender: enfoque en >8 semanas sin venta y CON stock vendible (el resto vive en el CSV). El motor
-      principal no los evalúa; aquí se diagnostica POR QUÉ murieron y qué hacer. Orden: capital atrapado.</div>
+      principal no los evalúa; aquí se diagnostica POR QUÉ murieron y qué hacer. Orden: VALOR DEL INVENTARIO (stock × costo en mano), mayor a menor.</div>
     <table>
       <colgroup><col style="width:19%"><col style="width:10%"><col style="width:9%"><col style="width:6%">
         <col style="width:13%"><col style="width:9%"><col style="width:9%"><col style="width:25%"></colgroup>
