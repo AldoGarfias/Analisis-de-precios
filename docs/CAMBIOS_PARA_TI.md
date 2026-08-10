@@ -31,7 +31,14 @@ auditado ronda 4"). El zip `motor-precios-v3-entrega.zip` corresponde a
   REAL, 421 remate ajeno, 639 espacio. Salidas: semaforo.parquet +
   semaforo_modelo.parquet. Decisión del usuario: resumen del motor solo chip
   de match 100% + confiabilidad de similares; vista dedicada tipo Dormidos.
-- **Archivos**: `semaforo.py` (nuevo).
+- **REGLA AFINADA (usuario 2026-08-10)**: el match 100% se realiza por el
+  MODELO — la marca es solo CONFIRMACIÓN: si difiere, el par se ACEPTA
+  completo con bandera `marca_confirma=False` (⚠ marca en el detallado),
+  jamás se descarta. Alias de marcas del mismo fabricante (UISP→Ubiquiti,
+  Netkey→Panduit, Omada/Mercusys→TP-Link, HiLook→Hikvision, etc.) en
+  ALIAS_MARCA; discrepancias a out/competencia_marcas_descartadas.csv para
+  cazar alias nuevos. Caso testigo: LBE5ACGEN2 (TVC lo lista como "UISP").
+- **Archivos**: `semaforo.py` (nuevo), `panel_sku.py` (bandera ⚠ marca).
 
 ## (este commit) — 2026-08-10 · EQUIVALENTES entre marcas rivales (piloto)
 

@@ -100,17 +100,20 @@ def correr():
         rr = R.loc[x.modelo_syscom]
         if not (c.precio_venta_usd > 0) or not (rr.neto0 > 0):
             continue
-        # candado de marca (rebrands OEM cuentan como acuerdo por contención)
+        # MARCA = solo CONFIRMACIÓN (usuario 2026-08-10: "el match 100% se
+        # realiza por el MODELO; la marca solo confirma — si el modelo hace
+        # match al 100% se toma por completo"). Discrepancia ⇒ bandera, no veto.
         mc, ms = _nm(c.marca), _nm(x.marca)
-        if len(mc) > 2 and len(ms) > 2 and mc not in ms and ms not in mc:
+        marca_ok = not (len(mc) > 2 and len(ms) > 2
+                        and mc not in ms and ms not in mc)
+        if not marca_ok:
             descartes.append((x.distribuidor, x.modelo_distribuidor, mc, ms))
-            continue
         gap = 100 * (c.precio_venta_usd / rr.neto0 - 1)
         if abs(gap) > 60:
             continue
         filas.append([x.modelo_syscom, "EXACTO", 1.0, x.distribuidor,
                       x.modelo_distribuidor, round(c.precio_venta_usd, 2),
-                      round(float(rr.neto0), 2), round(gap, 1)])
+                      round(float(rr.neto0), 2), round(gap, 1), marca_ok])
     # ── EQUIVALENTES (contexto, con su confiabilidad = sim del vector) ──
     ruta_eq = os.path.join(COMP, "equivalentes.parquet")
     if os.path.exists(ruta_eq):
@@ -120,10 +123,10 @@ def correr():
             conf = float(getattr(x, "sim_vector", 0.99) or 0.99)
             filas.append([x.codigo_syscom, "EQUIVALENTE", round(conf, 2), x.fuente,
                           x.modelo_comp, x.precio_comp_usd, x.subtotal_syscom,
-                          x.gap_pct])
+                          x.gap_pct, True])
     P = pd.DataFrame(filas, columns=["codigo", "match", "confiabilidad", "fuente",
                                      "modelo_comp", "precio_comp_usd",
-                                     "subtotal_sys", "gap_pct"])
+                                     "subtotal_sys", "gap_pct", "marca_confirma"])
     # firmas por par
     pers, tray = [], []
     for x in P.itertuples():
@@ -155,7 +158,7 @@ def correr():
         D = pd.DataFrame(descartes, columns=["fuente", "modelo", "marca_comp", "marca_sys"])
         D.to_csv(os.path.join(BASE, "out", "competencia_marcas_descartadas.csv"), index=False)
         top = D.groupby(["marca_comp", "marca_sys"]).size().nlargest(5)
-        print(f"  descartados por marca: {len(D)} (top pares para posible alias: "
+        print(f"  marca discrepante (ACEPTADOS con bandera): {len(D)} (posibles alias: "
               f"{top.to_dict()})", flush=True)
 
     # resumen POR MODELO para el reporte (el mejor par EXACTO manda; si solo

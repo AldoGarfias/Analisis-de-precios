@@ -388,8 +388,9 @@ def cuerpo_sku(codigo, ctx, volver_html=""):
             fr = []
             for p_ in pares_c.itertuples():
                 et, colr = SEMTXT[p_.semaforo]
-                m_ = ("100%" if p_.match == "EXACTO"
-                      else f"similar {p_.confiabilidad:.0%}")
+                m_ = ("100%" + ("" if getattr(p_, "marca_confirma", True)
+                                else ' <span class="hint" title="El MODELO coincide al 100% (manda); la marca listada por el competidor difiere de la nuestra — posible alias/rebrand, revisar">⚠ marca</span>')
+                      if p_.match == "EXACTO" else f"similar {p_.confiabilidad:.0%}")
                 fr.append(
                     f'<tr><td>{p_.fuente.upper()}<span class="rng">{str(p_.modelo_comp)[:24]}</span></td>'
                     f'<td>{m_}</td><td class="num">${p_.precio_comp_usd:,.2f}</td>'
