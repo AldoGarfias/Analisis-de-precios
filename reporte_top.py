@@ -150,6 +150,31 @@ def generar(n_paneles=30, n_top=200):
                 float(e.pct), str(e.fecha_ultimo),
                 (round(100 * e.margen_antes, 1) if pd.notna(e.margen_antes) else None),
                 (round(100 * e.margen_nuevo, 1) if pd.notna(e.margen_nuevo) else None)]
+    # ---- SEMÁFORO COMPETITIVO (semaforo.py): campo 28 + vista dedicada ----
+    sem_mod, filas3 = {}, []
+    ruta_sm = os.path.join(BASE, "data", "competencia", "semaforo_modelo.parquet")
+    if os.path.exists(ruta_sm):
+        _sm = pd.read_parquet(ruta_sm)
+        cod_sem = {"AMENAZA REAL": "A", "REMATE AJENO": "R", "ESPACIO": "E", "NEUTRO": "N"}
+        for x in _sm.itertuples():
+            sem_mod[x.codigo] = [("E" if x.match == "EXACTO" else "Q"),
+                                 float(x.confiabilidad), float(x.gap_pct),
+                                 cod_sem[x.semaforo], float(x.mejor_comp_usd),
+                                 str(x.fuente), int(x.consenso_n)]
+        _sp = pd.read_parquet(os.path.join(BASE, "data", "competencia", "semaforo.parquet"))
+        dir_map = recos.set_index("codigo").direccion
+        for x in _sp.itertuples():
+            filas3.append([str(x.codigo), str(dir_map.get(x.codigo, "")[:1] or ""),
+                           ("E" if x.match == "EXACTO" else "Q"),
+                           float(x.confiabilidad), str(x.fuente), str(x.modelo_comp),
+                           float(x.precio_comp_usd), float(x.subtotal_sys),
+                           float(x.gap_pct),
+                           (int(x.persistencia_d) if pd.notna(x.persistencia_d) else None),
+                           str(x.stock_comp), int(x.consenso_n), cod_sem[x.semaforo]])
+        print(f"  semáforo competitivo: {len(sem_mod):,} modelos en el reporte "
+              f"({len(filas3):,} pares en la vista)", flush=True)
+
+
     filas = []
     for _, x in r.iterrows():
         motivo = str(x.revisar) if pd.notna(x.revisar) and str(x.revisar) != "" else ""
@@ -205,6 +230,8 @@ def generar(n_paneles=30, n_top=200):
             # la mezcla de canal NO lleva chip en el resumen (usuario
             # 2026-08-01: "ya son demasiadas etiquetas") — trabaja en el fondo
             # (confianza) y se explica en el DETALLADO cuando fue determinante
+            # 28 = semáforo competitivo [match,conf,gap,sem,mejor,fuente,n]
+            sem_mod.get(x.codigo),
         ])
     provs = sorted(set(f[5] for f in filas if f[5])) if tiene_prov else []
     # OJO: índice explícito, no f[-1] — cada campo nuevo al final lo rompía
@@ -392,6 +419,7 @@ def generar(n_paneles=30, n_top=200):
     <button class="btn btn-v btn-pri" id="v_motor" onclick="setVista('motor')">Motor principal</button>
     <button class="btn btn-v" id="v_dorm" onclick="setVista('dorm')">💤 Dormidos (2ª capa) · {n_dorm:,} · {_usd(cap_dorm,0)} atrapados</button>
     <button class="btn btn-v" id="v_sim" onclick="setVista('sim')">🧮 Simulador de escenarios</button>
+    <button class="btn btn-v" id="v_comp" onclick="setVista('comp')">⚔ Competencia · {len(sem_mod):,} modelos</button>
   </div>
 
   <div id="vista-motor">
@@ -462,6 +490,27 @@ def generar(n_paneles=30, n_top=200):
     </table>
   </div>
   </div><!-- /vista-dormidos -->
+
+  <div id="vista-competencia" class="oculto">
+  <div style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <button class="btn btn-c btn-pri" id="s_T" onclick="setSem('T')">Todos</button>
+    <button class="btn btn-c" id="s_A" onclick="setSem('A')" title="Barato + persistente ≥7d + su stock rotando + NUESTRA venta cayendo — el único caso que amerita defensa">🔴 Amenaza real</button>
+    <button class="btn btn-c" id="s_R" onclick="setSem('R')" title="Más barato pero su stock estancado o precio efímero: es su problema de inventario, NO una posición de mercado — ignorar">🟠 Remate ajeno</button>
+    <button class="btn btn-c" id="s_E" onclick="setSem('E')" title="Estamos ≥10% abajo del mejor competidor persistente — respalda subir">🟢 Espacio</button>
+    <select class="btn" id="sel_match" onchange="pintarC()"><option value="">Match: todos</option><option value="E">100% exacto</option><option value="Q">Similar (equivalente)</option></select>
+    <input class="btn" id="buscaC" placeholder="Buscar modelo…" oninput="pintarC()" style="min-width:160px">
+  </div>
+  <div class="card">
+    <div class="sec-t">Competencia — semáforo con 4 firmas de evidencia <span id="contadorC" style="color:var(--gris);font-weight:400"></span></div>
+    <div class="sec-s">Un precio ajeno NO es señal por sí solo: se valida con persistencia (≥7 días), la trayectoria de SU stock
+      (¿vende o está atorado?), consenso entre fuentes y NUESTRO daño (venta cayendo). Exactos = voz firme; similares = contexto con su confiabilidad.</div>
+    <table>
+      <colgroup><col style="width:16%"><col style="width:5%"><col style="width:11%"><col style="width:13%"><col style="width:8%"><col style="width:8%"><col style="width:7%"><col style="width:8%"><col style="width:9%"><col style="width:5%"><col style="width:10%"></colgroup>
+      <thead><tr><th>Modelo SYSCOM</th><th>Dir</th><th>Match</th><th>Competidor · modelo</th><th>Su precio</th><th>Nuestro subtotal</th><th>Gap</th><th title="Días que su precio lleva al nivel actual (±1%)">Persist.</th><th title="Trayectoria de su stock en la ventana del feed">Su stock</th><th title="Nº de fuentes ≤ +5% del mejor precio">Cons.</th><th>Semáforo</th></tr></thead>
+      <tbody id="cuerpoC"></tbody>
+    </table>
+  </div>
+  </div><!-- /vista-competencia -->
 
   <div id="vista-sim" class="oculto">
   <div class="card" style="margin-bottom:12px">
@@ -589,7 +638,7 @@ document.addEventListener("click", e => {
   if (caja && !ruta.includes(caja)) provAbre(false);
 });
 function celdas(f){
-  const [cod,sid,dir,rol,conf,prov,pa,ps,u,p10,p90,mg,minv,repo,crec,alza,dutil,motivo,flags,terr,web,mesesF,peor,cls,ttEps,costoMov,remN,anclaArr] = f;
+  const [cod,sid,dir,rol,conf,prov,pa,ps,u,p10,p90,mg,minv,repo,crec,alza,dutil,motivo,flags,terr,web,mesesF,peor,cls,ttEps,costoMov,remN,anclaArr,cmp] = f;
   let badge = dir==="S" ? '<span class="badge b-verde">SUBIR</span>'
             : dir==="B" ? '<span class="badge b-rojo">BAJAR</span>'
             : (motivo ? '<span class="badge b-ambar" title="'+motivo+'">EN REVISIÓN</span>'
@@ -616,6 +665,16 @@ function celdas(f){
       badge += ' <span class="badge b-ambar" title="Miran, no compran — escaparate web ('+dias+' días, informativo): '+vis.toLocaleString()+' vistas pero solo '+conv.toFixed(1)+'% termina en compra (mediana del sitio: '+cmed.toFixed(0)+'%) — hay demanda que NO se concreta; las ventas solas no ven esto">👁 WEB '+conv.toFixed(1)+'%</span>';
     else if (vis >= 100 && conv >= 2*cmed)
       badge += ' <span class="badge b-verde" title="Convierte muy bien — escaparate web ('+dias+' días, informativo): '+conv.toFixed(0)+'% de '+vis.toLocaleString()+' vistas termina en compra, el doble de la mediana del sitio ('+cmed.toFixed(0)+'%): poder de precio observado en la vitrina">🛒 WEB '+conv.toFixed(0)+'%</span>';
+  }
+  if (cmp){
+    const [cm,cconf,cgap,csem,cmejor,cfte,cn] = cmp;
+    if (cm === "E"){
+      const col = csem==="A" ? "b-rojo" : (csem==="E" ? "b-verde" : "b-gris");
+      const et = csem==="A" ? "AMENAZA" : (csem==="R" ? "REMATE AJENO" : (csem==="E" ? "ESPACIO" : "COMP"));
+      badge += ' <span class="badge '+col+'" title="⚔ MATCH 100% con la competencia: mejor precio '+cfte.toUpperCase()+' $'+cmejor.toLocaleString()+' ('+(cgap>0?'+':'')+cgap+'% vs nuestro subtotal) · '+cn+' fuente(s) en nivel similar. Semáforo con 4 firmas (persistencia, su stock, consenso, nuestro daño): '+et+'. Detalle en la pestaña ⚔ Competencia">⚔ '+(cgap>0?'+':'')+cgap+'%</span>';
+    } else {
+      badge += ' <span class="badge b-gris" title="≈ SIMILAR entre marcas (equivalente por atributos + vector + precio, confiabilidad '+cconf+'): mejor '+cfte.toUpperCase()+' $'+cmejor.toLocaleString()+' ('+(cgap>0?'+':'')+cgap+'%). NO es match 100% — contexto, no dato firme. Detalle en ⚔ Competencia">≈ conf '+cconf+'</span>';
+    }
   }
   if (anclaArr) badge += ' <span class="badge b-azul" title="⚓ ANCLA DE CANASTA: sus compañeros de folio pierden ~$'+anclaArr.toLocaleString()+'/sem si este precio sube (elasticidad cruzada del estudio de pares-evento con filtro duro, corrida 2026-07-31 — regenerable con analisis_canasta.py estricto) — el SUBIR se bloqueó para proteger la canasta completa">⚓ ANCLA −$'+anclaArr.toLocaleString()+'/sem</span>';
   if (remN) badge += ' <span class="badge b-rojo" title="Producto en REMATE'+(remN.startsWith("R")?" nivel "+remN:"")+' (clasificación del ERP): ya no se comercializa — si vende, dejar agotar el stock sin mover precio; el canal de remate gobierna. SUBIR/BAJAR bloqueados por regla.">🏷️ REMATE'+(remN.startsWith("R")?" "+remN:"")+'</span>';
@@ -698,6 +757,31 @@ function pintar(){
   selMotor = sel;  // selección vigente para exportar CSV (incluye TODO el filtro, no solo lo visible)
 }
 let selMotor = [];
+let semAct = "T";
+function setSem(x){ semAct = x;
+  ["T","A","R","E"].forEach(k => document.getElementById("s_"+k).classList.toggle("btn-pri", k===x));
+  pintarC(); }
+function pintarC(){
+  const q = document.getElementById("buscaC").value.trim().toUpperCase();
+  const mt = document.getElementById("sel_match").value;
+  const sel = FILAS3.filter(f => (semAct==="T" || f[12]===semAct)
+    && (!mt || f[2]===mt)
+    && (!q || f[0].toUpperCase().includes(q) || f[5].toUpperCase().includes(q)));
+  const SEM = {A:'<span class="badge b-rojo">🔴 AMENAZA REAL</span>', R:'<span class="badge b-ambar">🟠 REMATE AJENO</span>',
+               E:'<span class="badge b-verde">🟢 ESPACIO</span>', N:'<span class="badge b-gris">NEUTRO</span>'};
+  document.getElementById("cuerpoC").innerHTML = sel.slice(0,400).map(f => {
+    const [cod,dir,mt_,cf,fte,mc,pc,sub,gap,per,stk,n,sm] = f;
+    return '<tr><td><span style="font-weight:600;color:var(--azul)">'+cod+'</span></td>'
+      +'<td>'+(dir==="S"?'<span class="badge b-verde">S</span>':dir==="B"?'<span class="badge b-rojo">B</span>':dir?'<span class="badge b-gris">M</span>':'—')+'</td>'
+      +'<td>'+(mt_==="E"?'<span class="badge b-azul">100%</span>':'<span class="badge b-gris" title="equivalente entre marcas">≈ '+cf+'</span>')+'</td>'
+      +'<td title="'+mc+'"><span class="rng" style="font-size:11px">'+fte.toUpperCase()+' · '+mc.slice(0,18)+'</span></td>'
+      +'<td class="num">$'+pc.toLocaleString()+'</td><td class="num">$'+sub.toLocaleString()+'</td>'
+      +'<td class="num" style="color:var(--'+(gap<0?'rojo':'verde')+')">'+(gap>0?'+':'')+gap+'%</td>'
+      +'<td class="num">'+(per!==null?per+'d':'—')+'</td><td>'+stk+'</td><td class="num">'+n+'</td><td>'+SEM[sm]+'</td></tr>';
+  }).join("");
+  document.getElementById("contadorC").textContent = "— "+sel.length.toLocaleString()+" pares"
+    +(sel.length>400?" (mostrando 400)":"");
+}
 const selApl = new Set();
 function tSel(cod, el){ el.checked ? selApl.add(cod) : selApl.delete(cod);
   const b=document.getElementById("btnApl"); if(b) b.textContent = "🚀 Aplicar ("+selApl.size+")"; }
@@ -746,15 +830,19 @@ function volver(){
 }
 // ---- vista Dormidos (2ª capa) ----
 const FILAS2 = __FILAS2__;
+const FILAS3 = __FILAS3__;
 let dxAct = "T";
 function setVista(v){
   document.getElementById("vista-motor").classList.toggle("oculto", v!=="motor");
   document.getElementById("vista-dormidos").classList.toggle("oculto", v!=="dorm");
   document.getElementById("vista-sim").classList.toggle("oculto", v!=="sim");
+  document.getElementById("vista-competencia").classList.toggle("oculto", v!=="comp");
+  document.getElementById("v_comp").classList.toggle("btn-pri", v==="comp");
   document.getElementById("v_motor").classList.toggle("btn-pri", v==="motor");
   document.getElementById("v_dorm").classList.toggle("btn-pri", v==="dorm");
   document.getElementById("v_sim").classList.toggle("btn-pri", v==="sim");
   if (v==="dorm") pintarD();
+  if (v==="comp") pintarC();
   if (v==="sim") simular();
 }
 
@@ -938,6 +1026,7 @@ pintar();
             .replace("__DATOS__", json.dumps(datos, ensure_ascii=False))
             .replace("__FILAS__", json.dumps(filas, ensure_ascii=False))
             .replace("__FILAS2__", json.dumps(filas2, ensure_ascii=False))
+            .replace("__FILAS3__", json.dumps(filas3, ensure_ascii=False))
             .replace("__CORTE__", str(corte))
             .replace("__CAL__", json.dumps(cal_js))
             .replace("__TIENE_PROV__", "true" if tiene_prov else "false")
