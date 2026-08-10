@@ -16,6 +16,19 @@ auditado ronda 4"). El zip `motor-precios-v3-entrega.zip` corresponde a
 
 ---
 
+## (este commit) — 2026-08-10 · Aplicar desde DORMIDOS
+
+### Botón 🚀 Aplicar en la vista de dormidos + validación propia en el puente
+- **Qué**: casillas por fila (solo dormidos con precio sugerido ≠ vigente) y
+  botón "🚀 Aplicar (N)" en la vista Dormidos. El puente local
+  (`aplicar.py servir`) ahora valida en DOS fuentes: modelos del motor contra
+  `recomendaciones.csv` (como antes) y dormidos contra
+  `segunda_capa_dormidos.csv` (precio = sugerido ±0.5%); la regla P1/P3
+  aplica igual. Nota al ERP: `Motor de Precios v3 | dormidos <corte> |
+  <dirección>`. Los dormidos NO entran a monitoreo.aceptar (su seguimiento
+  es la propia 2ª capa + vigía); los del motor sí, como siempre.
+- **Archivos**: `aplicar.py` (servir), `reporte_top.py`.
+
 ## (este commit) — 2026-08-10 · SEMÁFORO COMPETITIVO (aprobado por el usuario)
 
 ### NUEVO: `semaforo.py` — valoración con 4 firmas de evidencia

@@ -475,6 +475,7 @@ def generar(n_paneles=30, n_top=200):
     <button class="btn btn-d" id="d_S" onclick="setDx('EVALUAR CONTINUIDAD')">Murió sin cambio</button>
     <button class="btn btn-d" id="d_L" onclick="setDx('LIQUIDAR')">Bajó y no reaccionó</button>
     <input class="btn" id="buscaD" placeholder="Buscar código…" oninput="pintarD()" style="min-width:160px">
+    <button class="btn" id="btnAplD" onclick="aplicarSelD()" title="Aplica en el ERP los dormidos marcados con la casilla — vía el puente local (aplicar.py servir), validados contra el precio sugerido de la 2ª capa y la regla P1/P3">🚀 Aplicar (0)</button>
   </div>
   <div style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
     <span class="rng" style="font-size:12px">Historia de costos (quedó caro):</span>
@@ -768,6 +769,14 @@ function pintar(){
   selMotor = sel;  // selección vigente para exportar CSV (incluye TODO el filtro, no solo lo visible)
 }
 let selMotor = [];
+const selAplD = new Set();
+function tSelD(cod, el){ el.checked ? selAplD.add(cod) : selAplD.delete(cod);
+  const b=document.getElementById("btnAplD"); if(b) b.textContent = "🚀 Aplicar ("+selAplD.size+")"; }
+function aplicarSelD(){
+  if (!selAplD.size) return alert("Marca la casilla de los dormidos a aplicar");
+  const ms = []; FILAS2.forEach(f => { if (selAplD.has(f[0]) && f[9] !== null) ms.push({modelo: f[0], precio: f[9]}); });
+  if (confirm("¿Aplicar "+ms.length+" precio(s) sugerido(s) de DORMIDOS en el ERP?\\n(el puente valida contra la 2ª capa y la regla P1/P3)")) _postApl(ms);
+}
 let semAct = "T";
 function setSem(x){ semAct = x;
   ["T","A","R","E"].forEach(k => document.getElementById("s_"+k).classList.toggle("btn-pri", k===x));
@@ -1013,7 +1022,9 @@ function celdaD(f){
       ? ' <span class="badge b-rojo" title="⚔ La competencia vende ESTE MISMO modelo más barato: '+cfte.toUpperCase()+' a $'+cmejor.toLocaleString()+' USD ('+cgap+'% vs nuestra base) — posible explicación de la dormancia. Detalle en la pestaña ⚔ Competencia">⚔ COMP '+Math.abs(cgap)+'% ABAJO</span>'
       : ' <span class="badge b-gris" title="≈ La competencia vende un producto SIMILAR (otra marca, confiabilidad '+Math.round(cconf*100)+'%) más barato: '+cfte.toUpperCase()+' a $'+cmejor.toLocaleString()+' USD ('+cgap+'%). Contexto, no dato firme">≈ COMP SIMILAR '+Math.abs(cgap)+'% ABAJO</span>';
   }
-  return '<tr'+clicD+'><td title="'+cod+'">'+(sidD?'▸ ':'')+'<span style="font-weight:600;color:var(--azul)">'+cod+'</span> '+badge+remB+compB
+  const chkD = (pSug !== null && pHoy !== null && Math.abs(pSug/pHoy-1) > 0.001)
+    ? '<input type="checkbox" '+(selAplD.has(cod)?'checked ':'')+'data-c="'+cod+'" onclick="event.stopPropagation();tSelD(this.dataset.c,this)" style="margin-right:6px;vertical-align:middle" title="Seleccionar para aplicar el precio sugerido en el ERP"> ' : '';
+  return '<tr'+clicD+'><td title="'+cod+'">'+chkD+(sidD?'▸ ':'')+'<span style="font-weight:600;color:var(--azul)">'+cod+'</span> '+badge+remB+compB
     +(hist && HIST_BADGE[hist] ? ' '+HIST_BADGE[hist] : '')+'</td>'
     +'<td title="'+(prov||"")+'"><span class="rng" style="font-size:12px;text-align:left">'+(prov||"—")+'</span></td>'
     +'<td class="num">'+ult+'<span class="rng" title="Semanas sin venta TENIENDO stock (reloj de muerte efectiva) — las semanas sin inventario no cuentan">'+semSin+' sem muerto c/stock</span></td>'

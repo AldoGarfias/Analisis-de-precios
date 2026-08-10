@@ -164,6 +164,12 @@ def servir(puerto=8765):
     corte = pd.to_datetime(recos.corte.iloc[0]).date()
     snaps = sorted(_g.glob(os.path.join(BASE, "data", "vigia", "snap_*.parquet")))
     snap = pd.read_parquet(snaps[-1]).set_index("codigo") if snaps else None
+    # DORMIDOS (usuario 2026-08-10): también se aplican desde el reporte —
+    # se validan contra SU fuente (segunda capa), no contra recos
+    ruta_d = os.path.join(BASE, "out", "segunda_capa_dormidos.csv")
+    dorm = (pd.read_csv(ruta_d).dropna(subset=["precio_sugerido"])
+            .drop_duplicates("codigo").set_index("codigo")
+            if os.path.exists(ruta_d) else None)
 
     class H(BaseHTTPRequestHandler):
         def _resp(self, code, obj):
@@ -185,17 +191,25 @@ def servir(puerto=8765):
                 res = []
                 for m in datos.get("modelos", [])[:MAX_POR_CORRIDA]:
                     cod, p = str(m["modelo"]), float(m["precio"])
-                    if cod not in recos.index:
-                        res.append({"modelo": cod, "status": "RECHAZADO: no está en la corrida"}); continue
-                    rr = recos.loc[cod]
-                    if abs(p / float(rr.precio_sugerido) - 1) > TOL_PRECIO or float(rr.cambio_pct) == 0:
-                        res.append({"modelo": cod, "status": "RECHAZADO: precio ≠ sugerido o MANTENER"}); continue
+                    es_dormido = cod not in recos.index and dorm is not None \
+                        and cod in dorm.index
+                    if cod not in recos.index and not es_dormido:
+                        res.append({"modelo": cod, "status": "RECHAZADO: no está en la corrida ni en dormidos"}); continue
+                    if es_dormido:
+                        dd = dorm.loc[cod]
+                        if abs(p / float(dd.precio_sugerido) - 1) > TOL_PRECIO:
+                            res.append({"modelo": cod, "status": f"RECHAZADO: precio ≠ sugerido de dormidos ({dd.precio_sugerido})"}); continue
+                        nota = f"Motor de Precios v3 | dormidos {corte} | {dd.direccion}"
+                    else:
+                        rr = recos.loc[cod]
+                        if abs(p / float(rr.precio_sugerido) - 1) > TOL_PRECIO or float(rr.cambio_pct) == 0:
+                            res.append({"modelo": cod, "status": "RECHAZADO: precio ≠ sugerido o MANTENER"}); continue
+                        nota = f"Motor de Precios v3 | ciclo {corte} | {rr.cambio_pct:+.0f}%"
                     campo, marca = _campo_precio(cod, round(p, 2), snap)
                     if campo is None:
                         res.append({"modelo": cod, "status": marca}); continue
                     payload = {"modelo": cod, campo: round(p, 2),
-                               "nota": f"Motor de Precios v3 | ciclo {corte} | {rr.cambio_pct:+.0f}%",
-                               "remate": "no", "actor_email": actor}
+                               "nota": nota, "remate": "no", "actor_email": actor}
                     r_ = requests.post(f"{url}/api/agent/cambiar-precios", json=payload,
                                        headers={"x-api-key": key}, timeout=30)
                     res.append({"modelo": cod, "campo": campo, "http": r_.status_code,
@@ -207,8 +221,10 @@ def servir(puerto=8765):
                     pd.DataFrame(res).to_csv(os.path.join(
                         BASE, "out", "aplicaciones",
                         f"aplicacion_{_dt.now():%Y%m%d_%H%M%S}.csv"), index=False)
-                    import monitoreo
-                    monitoreo.aceptar(ok)
+                    ok_motor = [c for c in ok if c in recos.index]
+                    if ok_motor:
+                        import monitoreo
+                        monitoreo.aceptar(ok_motor)
                 self._resp(200, {"resultados": res})
             except Exception as e:
                 self._resp(500, {"error": str(e)[:200]})
