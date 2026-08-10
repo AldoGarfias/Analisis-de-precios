@@ -105,6 +105,9 @@ def cargar_ctx():
                              f"{c_pan} — re-corre escenarios.py (o run.py) antes de reportar")
     ruta = os.path.join(BASE, "data", "eps_por_sku.parquet")
     ctx["eps_map"] = pd.read_parquet(ruta).set_index("codigo") if os.path.exists(ruta) else None
+    # pares del semáforo competitivo (para el bloque del detallado)
+    ruta_sc = os.path.join(BASE, "data", "competencia", "semaforo.parquet")
+    ctx["sem_par"] = pd.read_parquet(ruta_sc) if os.path.exists(ruta_sc) else None
     # registro del seguimiento diario de frenos (si existe)
     ruta_f = os.path.join(BASE, "out", "seguimiento_frenos.csv")
     ctx["frenos"] = (pd.read_csv(ruta_f).drop_duplicates("codigo").set_index("codigo")
@@ -371,6 +374,42 @@ def cuerpo_sku(codigo, ctx, volver_html=""):
     # bloque de MOVIMIENTO DE COSTO (usuario 2026-07-31: el detallado individual
     # acompaña a cada "💲 Costo movió") — datos de la vigía + guía empírica del
     # estudio de 21K eventos (trade-off trasladar/absorber)
+    # BLOQUE DE COMPETENCIA (usuario 2026-08-10): análisis detallado de todos
+    # los pares del modelo — quién, a cuánto, y las 4 firmas del semáforo
+    bloque_comp = ""
+    sp = ctx.get("sem_par")
+    if sp is not None:
+        pares_c = sp[sp.codigo == codigo].sort_values("precio_comp_usd")
+        if len(pares_c):
+            SEMTXT = {"AMENAZA REAL": ("🔴 AMENAZA REAL", "var(--rojo)"),
+                      "REMATE AJENO": ("🟠 REMATE AJENO", "#b45309"),
+                      "ESPACIO": ("🟢 ESPACIO", "var(--verde)"),
+                      "NEUTRO": ("NEUTRO", "var(--gris)")}
+            fr = []
+            for p_ in pares_c.itertuples():
+                et, colr = SEMTXT[p_.semaforo]
+                m_ = ("100%" if p_.match == "EXACTO"
+                      else f"similar {p_.confiabilidad:.0%}")
+                fr.append(
+                    f'<tr><td>{p_.fuente.upper()}<span class="rng">{str(p_.modelo_comp)[:24]}</span></td>'
+                    f'<td>{m_}</td><td class="num">${p_.precio_comp_usd:,.2f}</td>'
+                    f'<td class="num" style="color:var(--{"rojo" if p_.gap_pct < 0 else "verde"})">{p_.gap_pct:+.1f}%</td>'
+                    f'<td class="num">{int(p_.persistencia_d) if pd.notna(p_.persistencia_d) else "—"}d</td>'
+                    f'<td>{p_.stock_comp}</td><td style="color:{colr};font-weight:600">{et}</td></tr>')
+            bloque_comp = (
+                '<div class="card" style="margin-top:14px">'
+                '<div class="sec-t">⚔ Competencia — análisis detallado</div>'
+                '<div class="sec-s">Cada fila es un competidor real vendiendo este modelo (match 100%) o su '
+                'equivalente de otra marca (similar, con su confiabilidad). El semáforo pondera 4 firmas: '
+                'persistencia del precio (≥7 días = posición real), la trayectoria de SU stock '
+                '(VENDIENDO = rota de verdad; ESTANCADO = atorado, su precio no es mercado), consenso entre '
+                'fuentes, y NUESTRO daño (venta cayendo). Solo la AMENAZA REAL amerita defensa; el remate '
+                'ajeno se ignora.</div>'
+                '<table class="num"><tr><th>Competidor</th><th>Match</th><th>Su precio</th>'
+                '<th>Gap vs subtotal</th><th title="días del precio al nivel actual">Persist.</th>'
+                '<th>Su stock</th><th>Semáforo</th></tr>'
+                + "".join(fr) + '</table></div>')
+
     bloque_costo = ""
     rc = ctx.get("rev_costos")
     if rc is not None and codigo in rc.index:
@@ -451,6 +490,8 @@ def cuerpo_sku(codigo, ctx, volver_html=""):
     <div style="padding:0 8px 4px"><svg id="chart_{sid}" width="100%" height="300" viewBox="0 0 1040 300" role="img" aria-label="Unidades por semana"></svg></div>
     <div style="padding:0 8px 10px"><svg id="pstrip_{sid}" width="100%" height="64" viewBox="0 0 1040 64" role="img" aria-label="Precio de lista por semana"></svg></div>
   </div>
+
+  {bloque_comp}
 
   {bloque_costo}
 

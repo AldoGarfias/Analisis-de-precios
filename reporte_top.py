@@ -672,11 +672,11 @@ function celdas(f){
       const col = csem==="A" ? "b-rojo" : (csem==="E" ? "b-verde" : "b-gris");
       const et = csem==="A" ? "AMENAZA" : (csem==="R" ? "REMATE AJENO" : (csem==="E" ? "ESPACIO" : ""));
       const txt = cgap < 0
-        ? 'COMPETENCIA '+Math.abs(cgap)+'% ABAJO' + (csem==="A" ? ' · REAL' : (csem==="R" ? ' · REMATA' : ''))
-        : 'COMPETENCIA '+cgap+'% ARRIBA';
-      badge += ' <span class="badge '+col+'" title="⚔ MATCH 100% con la competencia: mejor precio '+cfte.toUpperCase()+' $'+cmejor.toLocaleString()+' ('+(cgap>0?'+':'')+cgap+'% vs nuestro subtotal) · '+cn+' fuente(s) en nivel similar. Semáforo con 4 firmas (persistencia, su stock, consenso, nuestro daño): '+(et||'NEUTRO')+'. Detalle en la pestaña ⚔ Competencia">⚔ '+txt+'</span>';
+        ? 'COMP '+Math.abs(cgap)+'% ABAJO' + (csem==="A" ? ' · REAL' : (csem==="R" ? ' · REMATA' : ''))
+        : 'COMP '+cgap+'% ARRIBA';
+      badge += ' <span class="badge '+col+'" title="⚔ Comparado contra '+cfte.toUpperCase()+' (match 100% del mismo modelo; el mejor precio entre '+cn+' fuente(s) en nivel similar): vende a $'+cmejor.toLocaleString()+' USD, '+(cgap>0?'+':'')+cgap+'% vs nuestro subtotal. Semáforo con 4 firmas (persistencia, su stock, consenso, nuestro daño): '+(et||'NEUTRO')+'. Análisis completo en el detallado y en la pestaña ⚔ Competencia">⚔ '+txt+'</span>';
     } else {
-      badge += ' <span class="badge b-gris" title="≈ SIMILAR entre marcas (equivalente por atributos + vector + precio, confiabilidad '+Math.round(cconf*100)+'%): mejor '+cfte.toUpperCase()+' $'+cmejor.toLocaleString()+' ('+(cgap>0?'+':'')+cgap+'%). NO es match 100% — contexto, no dato firme. Detalle en ⚔ Competencia">SIMILAR EN COMPETENCIA '+Math.round(cconf*100)+'%</span>';
+      badge += ' <span class="badge b-gris" title="≈ Comparado contra '+cfte.toUpperCase()+' — producto SIMILAR de otra marca (equivalente por atributos + vector + precio, confiabilidad '+Math.round(cconf*100)+'%): vende a $'+cmejor.toLocaleString()+' ('+(cgap>0?'+':'')+cgap+'%). NO es match 100% — contexto, no dato firme. Detalle en ⚔ Competencia">≈ COMP SIMILAR '+Math.round(cconf*100)+'%</span>';
     }
   }
   if (anclaArr) badge += ' <span class="badge b-azul" title="⚓ ANCLA DE CANASTA: sus compañeros de folio pierden ~$'+anclaArr.toLocaleString()+'/sem si este precio sube (elasticidad cruzada del estudio de pares-evento con filtro duro, corrida 2026-07-31 — regenerable con analisis_canasta.py estricto) — el SUBIR se bloqueó para proteger la canasta completa">⚓ ANCLA −$'+anclaArr.toLocaleString()+'/sem</span>';
