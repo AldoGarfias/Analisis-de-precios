@@ -320,6 +320,9 @@ def generar(n_paneles=30, n_top=200):
                 (round(float(x.meses_stock_era), 1)
                  if "meses_stock_era" in dd.columns and pd.notna(getattr(x, "meses_stock_era", None)) else None),
                 _clasif_remate(x),
+                # 17 = competencia más barata (exacto o similar) — dormidos
+                (sem_mod.get(x.codigo) if sem_mod.get(x.codigo)
+                 and sem_mod[x.codigo][2] < 0 else None),
             ])
 
     # ---- SIMULADOR (3ª sección): datos por SKU con la MISMA matemática del
@@ -968,7 +971,7 @@ const HIST_BADGE = {
   PURA: '<span class="badge b-azul" title="La lista subió sin ningún cambio de costo en 24 meses">SUBIÓ SIN CAMBIO DE COSTO</span>',
   SC:   '<span class="badge b-gris" title="Hubo cambio de costo pero sin compra concluyente: el piso usa el costo del stock en mano">COSTO NUEVO SIN COMPRAS</span>'};
 function celdaD(f){
-  const [cod,dir,prov,ult,semSin,uEra,pEra,pHoy,delta,pSug,stock,cap,expl,hist,sidD,mesesS,remN] = f;
+  const [cod,dir,prov,ult,semSin,uEra,pEra,pHoy,delta,pSug,stock,cap,expl,hist,sidD,mesesS,remN,cmpD] = f;
   const badge = dir==="REACTIVAR" ? '<span class="badge b-verde">REACTIVAR</span>'
               : dir==="LIQUIDAR" ? '<span class="badge b-rojo">LIQUIDAR</span>'
               : dir==="SOLO PROYECTO" ? '<span class="badge b-gris">SOLO PROYECTO</span>'
@@ -1003,7 +1006,14 @@ function celdaD(f){
     sug = '<b style="color:var(--azul)">'+usd(pSug)+'</b><span class="rng">peldaño de la cadencia — re-decisión cada 4 sem (ver explicación)</span>';
   }
   const clicD = sidD ? ' class="fila-sku" onclick="abrir(\\''+sidD+'\\')"' : "";
-  return '<tr'+clicD+'><td title="'+cod+'">'+(sidD?'▸ ':'')+'<span style="font-weight:600;color:var(--azul)">'+cod+'</span> '+badge+remB
+  let compB = '';
+  if (cmpD){
+    const [cm,cconf,cgap,csem,cmejor,cfte,cn] = cmpD;
+    compB = cm === "E"
+      ? ' <span class="badge b-rojo" title="⚔ La competencia vende ESTE MISMO modelo más barato: '+cfte.toUpperCase()+' a $'+cmejor.toLocaleString()+' USD ('+cgap+'% vs nuestra base) — posible explicación de la dormancia. Detalle en la pestaña ⚔ Competencia">⚔ COMP '+Math.abs(cgap)+'% ABAJO</span>'
+      : ' <span class="badge b-gris" title="≈ La competencia vende un producto SIMILAR (otra marca, confiabilidad '+Math.round(cconf*100)+'%) más barato: '+cfte.toUpperCase()+' a $'+cmejor.toLocaleString()+' USD ('+cgap+'%). Contexto, no dato firme">≈ COMP SIMILAR '+Math.abs(cgap)+'% ABAJO</span>';
+  }
+  return '<tr'+clicD+'><td title="'+cod+'">'+(sidD?'▸ ':'')+'<span style="font-weight:600;color:var(--azul)">'+cod+'</span> '+badge+remB+compB
     +(hist && HIST_BADGE[hist] ? ' '+HIST_BADGE[hist] : '')+'</td>'
     +'<td title="'+(prov||"")+'"><span class="rng" style="font-size:12px;text-align:left">'+(prov||"—")+'</span></td>'
     +'<td class="num">'+ult+'<span class="rng" title="Semanas sin venta TENIENDO stock (reloj de muerte efectiva) — las semanas sin inventario no cuentan">'+semSin+' sem muerto c/stock</span></td>'
