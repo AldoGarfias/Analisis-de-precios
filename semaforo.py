@@ -35,9 +35,25 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 COMP = os.path.join(BASE, "data", "competencia")
 
 
+# ALIAS de marca (rebrands/sub-líneas del MISMO fabricante — caso testigo
+# 2026-08-10: TVC lista LBE5ACGEN2 como "UISP", nuestro catálogo "UBIQUITI")
+ALIAS_MARCA = {
+    "UISP": "UBIQUITI", "UBNT": "UBIQUITI", "UNIFI": "UBIQUITI",
+    "HILOOK": "HIKVISION", "HILOOKBYHIKVISION": "HIKVISION",
+    "UNIARCH": "UNV", "UNIARCHBYUNV": "UNV", "UNVUNIVIEW": "UNV",
+    "UNIVIEW": "UNV", "IMOU": "DAHUA", "EZVIZ": "HIKVISION",
+    "NETKEY": "PANDUIT", "WDWESTERNDIGITAL": "WESTERNDIGITAL",
+    "WESTERNDIGITALWD": "WESTERNDIGITAL", "OMADA": "TPLINK", "MERCUSYS": "TPLINK",
+    "TPLINK": "TPLINK", "CHAROFIL": "GEWISS",
+}
+
+
 def _nm(s):
     s = unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode().upper()
-    return re.sub(r"[^A-Z0-9]", "", s)
+    s = re.sub(r"[^A-Z0-9]", "", s)
+    if s in ("NULL", "NAN", "NONE"):
+        return ""          # sin marca real ⇒ el candado de marca no aplica
+    return ALIAS_MARCA.get(s, s)
 
 
 def _firmas(db, fuente, modelo):
@@ -69,7 +85,7 @@ def correr():
                               / recos.margen_actual, np.nan)
     R = recos.set_index("codigo")
 
-    filas = []
+    filas, descartes = [], []
     # ── EXACTOS con candados (marca coincide + |gap|≤60) ──
     o = pd.read_parquet(os.path.join(COMP, "syscom_vs_distribuidores.parquet"))
     ex = o[(o.via_final == "MODELO") & (o.nivel == "EXACTO")].copy()
@@ -87,6 +103,7 @@ def correr():
         # candado de marca (rebrands OEM cuentan como acuerdo por contención)
         mc, ms = _nm(c.marca), _nm(x.marca)
         if len(mc) > 2 and len(ms) > 2 and mc not in ms and ms not in mc:
+            descartes.append((x.distribuidor, x.modelo_distribuidor, mc, ms))
             continue
         gap = 100 * (c.precio_venta_usd / rr.neto0 - 1)
         if abs(gap) > 60:
@@ -134,6 +151,12 @@ def correr():
         return "NEUTRO"
     P["semaforo"] = [clasifica(x) for x in P.itertuples()]
     P.to_parquet(os.path.join(COMP, "semaforo.parquet"), index=False)
+    if descartes:
+        D = pd.DataFrame(descartes, columns=["fuente", "modelo", "marca_comp", "marca_sys"])
+        D.to_csv(os.path.join(BASE, "out", "competencia_marcas_descartadas.csv"), index=False)
+        top = D.groupby(["marca_comp", "marca_sys"]).size().nlargest(5)
+        print(f"  descartados por marca: {len(D)} (top pares para posible alias: "
+              f"{top.to_dict()})", flush=True)
 
     # resumen POR MODELO para el reporte (el mejor par EXACTO manda; si solo
     # hay equivalentes, la confiabilidad del similar)
