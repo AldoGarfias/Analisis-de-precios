@@ -163,6 +163,7 @@ def generar(n_paneles=30, n_top=200):
                                  str(x.fuente), int(x.consenso_n)]
         _sp = pd.read_parquet(os.path.join(BASE, "data", "competencia", "semaforo.parquet"))
         dir_map = recos.set_index("codigo").direccion
+        u_map = recos.set_index("codigo").u_sem_actual
         for x in _sp.itertuples():
             filas3.append([str(x.codigo), str(dir_map.get(x.codigo, "")[:1] or ""),
                            ("E" if x.match == "EXACTO" else "Q"),
@@ -170,7 +171,10 @@ def generar(n_paneles=30, n_top=200):
                            float(x.precio_comp_usd), float(x.subtotal_sys),
                            float(x.gap_pct),
                            (int(x.persistencia_d) if pd.notna(x.persistencia_d) else None),
-                           str(x.stock_comp), int(x.consenso_n), cod_sem[x.semaforo]])
+                           str(x.stock_comp), int(x.consenso_n), cod_sem[x.semaforo],
+                           round(float(u_map.get(x.codigo, 0) or 0), 1)])
+        # orden: NUESTRA venta semanal, mayor → menor (usuario 2026-08-10)
+        filas3.sort(key=lambda f: -f[13])
         print(f"  semáforo competitivo: {len(sem_mod):,} modelos en el reporte "
               f"({len(filas3):,} pares en la vista)", flush=True)
 
@@ -505,8 +509,8 @@ def generar(n_paneles=30, n_top=200):
     <div class="sec-s">Un precio ajeno NO es señal por sí solo: se valida con persistencia (≥7 días), la trayectoria de SU stock
       (¿vende o está atorado?), consenso entre fuentes y NUESTRO daño (venta cayendo). Exactos = voz firme; similares = contexto con su confiabilidad.</div>
     <table>
-      <colgroup><col style="width:16%"><col style="width:5%"><col style="width:11%"><col style="width:13%"><col style="width:8%"><col style="width:8%"><col style="width:7%"><col style="width:8%"><col style="width:9%"><col style="width:5%"><col style="width:10%"></colgroup>
-      <thead><tr><th>Modelo SYSCOM</th><th>Dir</th><th>Match</th><th>Competidor · modelo</th><th>Su precio</th><th>Nuestro subtotal</th><th>Gap</th><th title="Días que su precio lleva al nivel actual (±1%)">Persist.</th><th title="Trayectoria de su stock en la ventana del feed">Su stock</th><th title="Nº de fuentes ≤ +5% del mejor precio">Cons.</th><th>Semáforo</th></tr></thead>
+      <colgroup><col style="width:15%"><col style="width:4%"><col style="width:6%"><col style="width:9%"><col style="width:13%"><col style="width:8%"><col style="width:8%"><col style="width:7%"><col style="width:8%"><col style="width:9%"><col style="width:5%"><col style="width:10%"></colgroup>
+      <thead><tr><th>Modelo SYSCOM</th><th>Dir</th><th title="Venta semanal NUESTRA del modelo (orden de la tabla, mayor a menor)">Vta/sem</th><th>Match</th><th>Competidor · modelo</th><th>Su precio</th><th>Nuestro subtotal</th><th>Gap</th><th title="Días que su precio lleva al nivel actual (±1%)">Persist.</th><th title="Trayectoria de su stock en la ventana del feed">Su stock</th><th title="Nº de fuentes ≤ +5% del mejor precio">Cons.</th><th>Semáforo</th></tr></thead>
       <tbody id="cuerpoC"></tbody>
     </table>
   </div>
@@ -773,9 +777,10 @@ function pintarC(){
   const SEM = {A:'<span class="badge b-rojo">🔴 AMENAZA REAL</span>', R:'<span class="badge b-ambar">🟠 REMATE AJENO</span>',
                E:'<span class="badge b-verde">🟢 ESPACIO</span>', N:'<span class="badge b-gris">NEUTRO</span>'};
   document.getElementById("cuerpoC").innerHTML = sel.slice(0,400).map(f => {
-    const [cod,dir,mt_,cf,fte,mc,pc,sub,gap,per,stk,n,sm] = f;
+    const [cod,dir,mt_,cf,fte,mc,pc,sub,gap,per,stk,n,sm,usem] = f;
     return '<tr><td><span style="font-weight:600;color:var(--azul)">'+cod+'</span></td>'
       +'<td>'+(dir==="S"?'<span class="badge b-verde">S</span>':dir==="B"?'<span class="badge b-rojo">B</span>':dir?'<span class="badge b-gris">M</span>':'—')+'</td>'
+      +'<td class="num">'+(usem||0).toLocaleString()+'</td>'
       +'<td>'+(mt_==="E"?'<span class="badge b-azul">100%</span>':'<span class="badge b-gris" title="equivalente entre marcas">≈ '+cf+'</span>')+'</td>'
       +'<td title="'+mc+'"><span class="rng" style="font-size:11px">'+fte.toUpperCase()+' · '+mc.slice(0,18)+'</span></td>'
       +'<td class="num">$'+pc.toLocaleString()+'</td><td class="num">$'+sub.toLocaleString()+'</td>'
