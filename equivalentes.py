@@ -91,6 +91,19 @@ def correr():
                       .drop_duplicates(["fuente", "modelo"], keep="last"))
     C = pd.concat(partes, ignore_index=True)
     C = C[(C.precio_venta_usd > 0) & C.nombre.notna()].copy()
+    # EXCLUIR productos del competidor que YA tienen match 100% con nuestro
+    # catálogo (usuario 2026-08-10, caso CT·IPCT240HALUC): son IDENTIDAD, no
+    # sustitutos — su comparación vive en el carril exacto; dejarlos aquí
+    # genera 'amenazas' falsas contra otros modelos nuestros de otra gama
+    ruta_m = os.path.join(COMP, "syscom_vs_distribuidores.parquet")
+    if os.path.exists(ruta_m):
+        _mx = pd.read_parquet(ruta_m)
+        exactos = set(zip(_mx[_mx.nivel == "EXACTO"].distribuidor,
+                          _mx[_mx.nivel == "EXACTO"].modelo_distribuidor))
+        antes = len(C)
+        C = C[[(f_, m_) not in exactos for f_, m_ in zip(C.fuente, C.modelo)]]
+        print(f"excluidos por ser match 100% (identidad, no sustituto): "
+              f"{antes - len(C):,}", flush=True)
     C["marca_n"] = C.marca.map(_norm_marca)
     C[["tipo", "mp", "mm", "tec", "gama"]] = [(_attr(n)) for n in C.nombre]
     C = C.dropna(subset=["tipo", "mp"])
