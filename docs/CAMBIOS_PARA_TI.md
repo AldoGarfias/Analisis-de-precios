@@ -16,6 +16,20 @@ auditado ronda 4"). El zip `motor-precios-v3-entrega.zip` corresponde a
 
 ---
 
+## (este commit) — 2026-08-10 · Duelo de ranking semántico: MiniLM se queda
+
+### `duel_rerank.py` — campeón-retador con juez fijado ex-ante
+- **Qué**: se evaluó sustituir el ranking semántico de equivalentes
+  (Cohere/Pinecone descartados: escala innecesaria, costo y salida de datos;
+  retador final = BGE-reranker-v2-m3, gratuito y local). Juez: firma de
+  precio como verdad externa, NO usada en el ranking. Resultado (369 casos):
+  gap mediano 55.0% (MiniLM) vs 55.3% (BGE); gap≤25%: 23% vs 21% — empate
+  técnico ⇒ CAMPEÓN se queda. HALLAZGO: con el bloqueo de atributos hecho,
+  la semántica aporta poco — la DOBLE FIRMA (atributos + cercanía de precio)
+  es la que encuentra al sustituto (gap mediano 0.2% en producción). Mejora
+  futura útil = juez LLM en dudosos, no mejores embeddings.
+- **Archivos**: `duel_rerank.py` (nuevo). Sin cambios en reglas.
+
 ## (este commit) — 2026-08-10 · Dormidos: no subir recortes ajenos + orden por valor de inventario
 
 ### REGLA NUEVA: el motor NO sugiere subir precios que él no bajó
