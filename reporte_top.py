@@ -416,7 +416,7 @@ def generar(n_paneles=30, n_top=200):
 <div class="wrap" id="resumen">
   <div class="top">
     <span style="font-size:20px;font-weight:700">Motor de Precio Óptimo <span style="color:var(--azul)">v3</span></span>
-    <span style="font-size:12px;color:var(--gris)">TODOS los modelos evaluables ({len(filas):,}) · panel de {pan.semana.nunique()} semanas · datos al {corte} · ε global {eps_g:.2f}</span>
+    <span style="font-size:12px;color:var(--gris)">TODOS los modelos evaluables ({len(filas):,}) · panel de {pan.semana.nunique()} semanas · ventas al {(pd.Timestamp(corte) + pd.Timedelta(days=6)).date()} <span class="hint" title="El motor trabaja con SEMANAS COMPLETAS (lunes a domingo). La última semana completa es la del {corte}, que cubre ventas hasta el domingo. La semana en curso entra al cerrar (así un lunes con 1 día de datos no sesga la demanda).">(semana del {corte})</span> · ε global {eps_g:.2f}</span>
   </div>
   <div class="kpis">
     <div class="card kpi" title="{tt_subir}"><div class="lbl">Subir precios</div><div class="val num" style="color:var(--verde)">{n_subir:,}</div><div class="sub hint" style="display:inline-block">{sub_subir}</div></div>
