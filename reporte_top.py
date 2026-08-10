@@ -172,7 +172,8 @@ def generar(n_paneles=30, n_top=200):
                            float(x.gap_pct),
                            (int(x.persistencia_d) if pd.notna(x.persistencia_d) else None),
                            str(x.stock_comp), int(x.consenso_n), cod_sem[x.semaforo],
-                           round(float(u_map.get(x.codigo, 0) or 0), 1)])
+                           round(float(u_map.get(x.codigo, 0) or 0), 1),
+                           str(getattr(x, "base", "subtotal"))])
         # orden: NUESTRA venta semanal, mayor → menor (usuario 2026-08-10)
         filas3.sort(key=lambda f: -f[13])
         print(f"  semáforo competitivo: {len(sem_mod):,} modelos en el reporte "
@@ -777,13 +778,13 @@ function pintarC(){
   const SEM = {A:'<span class="badge b-rojo">🔴 AMENAZA REAL</span>', R:'<span class="badge b-ambar">🟠 REMATE AJENO</span>',
                E:'<span class="badge b-verde">🟢 ESPACIO</span>', N:'<span class="badge b-gris">NEUTRO</span>'};
   document.getElementById("cuerpoC").innerHTML = sel.slice(0,400).map(f => {
-    const [cod,dir,mt_,cf,fte,mc,pc,sub,gap,per,stk,n,sm,usem] = f;
+    const [cod,dir,mt_,cf,fte,mc,pc,sub,gap,per,stk,n,sm,usem,bs] = f;
     return '<tr><td><span style="font-weight:600;color:var(--azul)">'+cod+'</span></td>'
       +'<td>'+(dir==="S"?'<span class="badge b-verde">S</span>':dir==="B"?'<span class="badge b-rojo">B</span>':dir?'<span class="badge b-gris">M</span>':'—')+'</td>'
       +'<td class="num">'+(usem||0).toLocaleString()+'</td>'
       +'<td>'+(mt_==="E"?'<span class="badge b-azul">100%</span>':'<span class="badge b-gris" title="equivalente entre marcas">≈ '+cf+'</span>')+'</td>'
       +'<td title="'+mc+'"><span class="rng" style="font-size:11px">'+fte.toUpperCase()+' · '+mc.slice(0,18)+'</span></td>'
-      +'<td class="num">$'+pc.toLocaleString()+'</td><td class="num">$'+sub.toLocaleString()+'</td>'
+      +'<td class="num">$'+pc.toLocaleString()+'</td><td class="num"'+(bs==="lista"?' title="Modelo CON STOCK pero SIN venta reciente: no hay neto real — la base de comparación es su LISTA vigente"':'')+'>$'+sub.toLocaleString()+(bs==="lista"?'<span class="rng">lista°</span>':'')+'</td>'
       +'<td class="num" style="color:var(--'+(gap<0?'rojo':'verde')+')">'+(gap>0?'+':'')+gap+'%</td>'
       +'<td class="num">'+(per!==null?per+'d':'—')+'</td><td>'+stk+'</td><td class="num">'+n+'</td><td>'+SEM[sm]+'</td></tr>';
   }).join("");

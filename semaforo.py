@@ -84,6 +84,29 @@ def correr():
                               (recos.utilidad_sem_mantener / recos.u_sem_actual)
                               / recos.margen_actual, np.nan)
     R = recos.set_index("codigo")
+    # AMPLIACIÓN (usuario 2026-08-10): también entran los modelos CON STOCK
+    # aunque no tengan venta reciente — "competencia más barata" es justo la
+    # posible explicación de por qué no se venden. Su base de comparación es
+    # la LISTA VIGENTE (p3 si existe, si no p1), marcada base='lista' porque
+    # no hay neto real; para el semáforo cuentan como dañados (venta = cero).
+    ex_ult = pd.read_parquet(os.path.join(BASE, "data", "reporte61",
+                                          "existencias_sem.parquet"))
+    ex_ult = (ex_ult.sort_values("semana").drop_duplicates("codigo", keep="last")
+              .set_index("codigo"))
+    col_d = "disp_venta" if "disp_venta" in ex_ult.columns else "disponible"
+
+    def base_precio(cod):
+        if cod in R.index and R.at[cod, "neto0"] > 0:
+            return float(R.at[cod, "neto0"]), "subtotal"
+        if cod in ex_ult.index:
+            f_ = ex_ult.loc[cod]
+            if float(f_.get(col_d, 0) or 0) > 0:
+                p3, p1 = float(f_.get("p3", 0) or 0), float(f_.get("p1", 0) or 0)
+                lista = p3 if p3 > 0 else p1
+                if lista > 0:
+                    return lista, "lista"
+        return np.nan, ""
+
 
     filas, descartes = [], []
     # ── EXACTOS con candados (marca coincide + |gap|≤60) ──
@@ -94,11 +117,11 @@ def correr():
              .set_index(["fuente", "modelo"]))
     for x in ex.itertuples():
         llave = (x.distribuidor, x.modelo_distribuidor)
-        if llave not in m_ult.index or x.modelo_syscom not in R.index:
+        if llave not in m_ult.index:
             continue
         c = m_ult.loc[llave]
-        rr = R.loc[x.modelo_syscom]
-        if not (c.precio_venta_usd > 0) or not (rr.neto0 > 0):
+        base_v, base_t = base_precio(x.modelo_syscom)
+        if not (c.precio_venta_usd > 0) or not (base_v > 0):
             continue
         # MARCA = solo CONFIRMACIÓN (usuario 2026-08-10: "el match 100% se
         # realiza por el MODELO; la marca solo confirma — si el modelo hace
@@ -108,12 +131,12 @@ def correr():
                         and mc not in ms and ms not in mc)
         if not marca_ok:
             descartes.append((x.distribuidor, x.modelo_distribuidor, mc, ms))
-        gap = 100 * (c.precio_venta_usd / rr.neto0 - 1)
+        gap = 100 * (c.precio_venta_usd / base_v - 1)
         if abs(gap) > 60:
             continue
         filas.append([x.modelo_syscom, "EXACTO", 1.0, x.distribuidor,
                       x.modelo_distribuidor, round(c.precio_venta_usd, 2),
-                      round(float(rr.neto0), 2), round(gap, 1), marca_ok])
+                      round(base_v, 2), round(gap, 1), marca_ok, base_t])
     # ── EQUIVALENTES (contexto, con su confiabilidad = sim del vector) ──
     ruta_eq = os.path.join(COMP, "equivalentes.parquet")
     if os.path.exists(ruta_eq):
@@ -123,10 +146,10 @@ def correr():
             conf = float(getattr(x, "sim_vector", 0.99) or 0.99)
             filas.append([x.codigo_syscom, "EQUIVALENTE", round(conf, 2), x.fuente,
                           x.modelo_comp, x.precio_comp_usd, x.subtotal_syscom,
-                          x.gap_pct, True])
+                          x.gap_pct, True, "subtotal"])
     P = pd.DataFrame(filas, columns=["codigo", "match", "confiabilidad", "fuente",
                                      "modelo_comp", "precio_comp_usd",
-                                     "subtotal_sys", "gap_pct", "marca_confirma"])
+                                     "subtotal_sys", "gap_pct", "marca_confirma", "base"])
     # firmas por par
     pers, tray = [], []
     for x in P.itertuples():
@@ -144,7 +167,8 @@ def correr():
     def clasifica(x):
         persistente = pd.notna(x.persistencia_d) and x.persistencia_d >= 7
         rotando = x.stock_comp in ("VENDIENDO", "REPONIENDO")
-        dañado = pd.notna(x.crecimiento) and x.crecimiento < -0.05
+        dañado = (pd.notna(x.crecimiento) and x.crecimiento < -0.05) \
+            or x.base == "lista"   # con stock y SIN venta = daño total
         if x.gap_pct < -10 and persistente and rotando and dañado:
             return "AMENAZA REAL"
         if x.gap_pct < -10:

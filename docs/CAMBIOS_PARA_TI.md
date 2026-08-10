@@ -38,7 +38,18 @@ auditado ronda 4"). El zip `motor-precios-v3-entrega.zip` corresponde a
   Netkey→Panduit, Omada/Mercusys→TP-Link, HiLook→Hikvision, etc.) en
   ALIAS_MARCA; discrepancias a out/competencia_marcas_descartadas.csv para
   cazar alias nuevos. Caso testigo: LBE5ACGEN2 (TVC lo lista como "UISP").
-- **Archivos**: `semaforo.py` (nuevo), `panel_sku.py` (bandera ⚠ marca).
+- **AMPLIACIÓN (usuario 2026-08-10)**: entran también los modelos CON STOCK
+  aunque no tengan venta reciente ("¿y si tenemos stock y no se vende?") —
+  su base de comparación es la LISTA vigente (p3>p1), columna `base='lista'`
+  marcada en la vista con «lista°»; para el semáforo cuentan como daño total
+  (venta cero). Un producto del competidor con match 100% queda EXCLUIDO del
+  carril de equivalentes (identidad ≠ sustituto, caso CT·IPCT240HALUC).
+  Cobertura: 2,857→3,580 pares, 1,645→2,239 modelos; AMENAZA REAL 21→53
+  (las nuevas son justo dormidos-con-stock donde la competencia vende más
+  barato y sí rota — la explicación de su dormancia). Vista ordenada por
+  NUESTRA venta semanal (mayor→menor) con columna Vta/sem.
+- **Archivos**: `semaforo.py`, `equivalentes.py`, `reporte_top.py`,
+  `panel_sku.py` (bandera ⚠ marca).
 
 ## (este commit) — 2026-08-10 · EQUIVALENTES entre marcas rivales (piloto)
 
