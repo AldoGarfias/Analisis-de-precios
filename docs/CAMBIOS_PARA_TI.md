@@ -16,6 +16,23 @@ auditado ronda 4"). El zip `motor-precios-v3-entrega.zip` corresponde a
 
 ---
 
+## (este commit) — 2026-08-10 · SEMÁFORO COMPETITIVO (aprobado por el usuario)
+
+### NUEVO: `semaforo.py` — valoración con 4 firmas de evidencia
+- **Qué**: clasifica cada par de competencia ANTES de que nadie reaccione a un
+  precio ajeno: (1) persistencia del precio (≥7d), (2) trayectoria de SU stock
+  (vendiendo/reponiendo/estancado), (3) consenso (nº fuentes ≤+5% del mejor),
+  (4) NUESTRO daño (crecimiento de venta del modelo). Clasificación:
+  AMENAZA REAL (gap<-10 + persistente + su stock rotando + nuestra venta
+  cayendo) / REMATE AJENO (barato pero atorado ⇒ ignorar) / ESPACIO (estamos
+  ≥10% abajo, persistente ⇒ respalda subir) / NEUTRO. EXACTOS con candados
+  (marca coincide + |gap|≤60) son la voz firme; EQUIVALENTES solo contexto
+  con su confiabilidad (sim del vector). 1ª corrida: 2,664 pares → 18 AMENAZA
+  REAL, 421 remate ajeno, 639 espacio. Salidas: semaforo.parquet +
+  semaforo_modelo.parquet. Decisión del usuario: resumen del motor solo chip
+  de match 100% + confiabilidad de similares; vista dedicada tipo Dormidos.
+- **Archivos**: `semaforo.py` (nuevo).
+
 ## (este commit) — 2026-08-10 · EQUIVALENTES entre marcas rivales (piloto)
 
 ### NUEVO: `equivalentes.py` — sustitutos entre marcas (Hikvision↔Dahua, etc.)
