@@ -50,11 +50,12 @@ def _attr(txt):
     """Atributos duros de una descripción (minúsculas)."""
     t = str(txt).lower()
     tipo = next((n for n, p in TIPOS if re.search(p, t)), None)
+    gama = bool(re.search(r"anticorrosi|antiexplosi|explosion[- ]?proof|motoriz|lente mot", t))
     mp = re.search(r"(\d+(?:\.\d+)?)\s*(?:mp\b|megapix)", t)
     mm = re.search(r"(\d+(?:\.\d+)?)\s*mm\b", t)
     tec = next((n for n, p in TEC if re.search(p, t)), None)
     return (tipo, float(mp.group(1)) if mp else None,
-            float(mm.group(1)) if mm else None, tec)
+            float(mm.group(1)) if mm else None, tec, gama)
 
 
 def _norm_marca(s):
@@ -74,7 +75,7 @@ def correr():
          .merge(ult[["codigo", "neto_prom", "precio_lista"]], on="codigo"))
     S = S[S.neto_prom > 0].copy()
     S["marca_n"] = S.marca.map(_norm_marca)
-    S[["tipo", "mp", "mm", "tec"]] = [(_attr(d)) for d in S.descripcion]
+    S[["tipo", "mp", "mm", "tec", "gama"]] = [(_attr(d)) for d in S.descripcion]
     S = S.dropna(subset=["tipo", "mp"])
     print(f"SYSCOM activos con atributos: {len(S):,} "
           f"({S.tipo.value_counts().to_dict()})", flush=True)
@@ -91,7 +92,7 @@ def correr():
     C = pd.concat(partes, ignore_index=True)
     C = C[(C.precio_venta_usd > 0) & C.nombre.notna()].copy()
     C["marca_n"] = C.marca.map(_norm_marca)
-    C[["tipo", "mp", "mm", "tec"]] = [(_attr(n)) for n in C.nombre]
+    C[["tipo", "mp", "mm", "tec", "gama"]] = [(_attr(n)) for n in C.nombre]
     C = C.dropna(subset=["tipo", "mp"])
     print(f"competencia con atributos: {len(C):,}", flush=True)
 
@@ -106,12 +107,17 @@ def correr():
         if g is None:
             continue
         g2 = g[g.marca_n.isin(riv)]
+        # gama debe COINCIDIR (anticorrosión/motorizado no sustituye estándar)
+        g2 = g2[g2.gama == x.gama]
         if x.mm is not None:
-            g2 = g2[(g2.mm.notna()) & ((g2.mm - x.mm).abs() <= 0.4)]
+            # lentes estándar adyacentes (2.8/3.6/4) SÍ son sustitutos:
+            # tolerancia un paso (≤1.2mm); la cercanía exacta se premia abajo
+            g2 = g2[(g2.mm.notna()) & ((g2.mm - x.mm).abs() <= 1.2)]
         if g2.empty:
             continue
-        # ranking por cercanía de PRECIO (sustitutos se parecen hasta en precio)
-        cerc = (np.log(g2.neto_prom / x.precio_venta_usd)).abs()
+        # ranking: cercanía de PRECIO (primaria) + cercanía de lente (desempate)
+        cerc = ((np.log(g2.neto_prom / x.precio_venta_usd)).abs()
+                + (0.10 * (g2.mm - x.mm).abs().fillna(0) if x.mm is not None else 0))
         mejor = g2.loc[cerc.idxmin()]
         pares.append({
             "fuente": x.fuente, "modelo_comp": x.modelo, "marca_comp": x.marca_n,
@@ -125,7 +131,8 @@ def correr():
         })
     E = pd.DataFrame(pares)
     if len(E):
-        E["nivel"] = "EQUIVALENTE"   # JAMÁS se mezcla con EXACTO
+        # |gap|>60% entre "equivalentes" casi siempre = gamas distintas ⇒ DUDOSO
+        E["nivel"] = np.where(E.gap_pct.abs() > 60, "DUDOSO", "EQUIVALENTE")
         E = E.sort_values("cercania_precio")
     E.to_parquet(os.path.join(COMP, "equivalentes.parquet"), index=False)
     E.to_csv(os.path.join(BASE, "out", "competencia_equivalentes.csv"), index=False)
