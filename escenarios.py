@@ -329,7 +329,7 @@ def rol_precio(est):
     return rol
 
 
-def metricas_dinamica(pan, est):
+def metricas_dinamica(pan, est, exist=None):
     """Dinámica de demanda por SKU (venta RECURRENTE, ajustada por mercado):
 
       - crecimiento MES vs MES (patrón, no salto): cadena de comparaciones
@@ -339,6 +339,11 @@ def metricas_dinamica(pan, est):
           · meses_alza  = cuántos pasos fueron positivos (consistencia: "4/5")
         Solo meses cerrados (hay picos en cierres de semana/mes); el mes en
         curso NUNCA entra. Base mínima 10 uds/mes para que un paso cuente.
+        EXCLUYE meses de STOCKOUT (usuario 2026-08-13, caso ACCESSTAGV2: se
+        quedó sin stock jun-jul y la venta cayó por FALTA DE INVENTARIO, no de
+        demanda — contar esos meses etiquetaba "demanda cayendo" en falso).
+        Un mes cuenta como stockout si ≥50% de sus semanas no tuvo stock
+        vendible; sus pasos mes-vs-mes se anulan (misma regla que ε y meses).
       - cobertura_sem: semanas de stock en almacenes de venta al ritmo de las
         últimas 4 semanas. Cobertura corta + demanda acelerando ⇒ subir para
         FRENAR la venta mientras se reabastece.
@@ -353,6 +358,25 @@ def metricas_dinamica(pan, est):
     meses = np.sort(df.mes.unique())        # TODOS los meses completos (hasta 24)
     piv = (df.pivot_table(index="codigo", columns="mes", values="unidades",
                           aggfunc="sum").reindex(columns=meses).fillna(0.0))
+    # MÁSCARA de meses SUB-STOCKEADOS por SKU: no basta que el stock sea CERO
+    # (usuario 2026-08-13, ACCESSTAGV2: tenía 321-825 uds para un modelo de
+    # ~10K/sem — insuficiente para cubrir su demanda). Criterio: una semana está
+    # RESTRINGIDA si el disponible cubre < 1 semana de su demanda típica
+    # (mediana de las semanas con venta); un mes cuenta como stockout si ≥50%
+    # de sus semanas estuvieron restringidas.
+    stockout = None
+    if exist is not None:
+        col = ("disp_venta" if "disp_venta" in exist.columns else
+               ("disponible" if "disponible" in exist.columns else "existencia"))
+        typ = (pan[pan.unidades > 0].groupby("codigo").unidades.median())
+        ex = exist[["codigo", "semana", col]].copy()
+        ex["mes"] = (ex.semana + pd.Timedelta(days=3)).dt.to_period("M")
+        ex["typ"] = ex.codigo.map(typ)
+        ex["restr"] = ((pd.to_numeric(ex[col], errors="coerce").fillna(0)
+                        < ex.typ) & ex.typ.notna()).astype(float)
+        so = (ex.pivot_table(index="codigo", columns="mes", values="restr",
+                             aggfunc="mean").reindex(columns=meses))
+        stockout = so.reindex(piv.index) >= 0.5   # True = mes sub-stockeado
 
     def _patron(n_pasos, min_validos):
         """Mediana y racha de la cadena mes-vs-mes de los últimos n_pasos."""
@@ -363,6 +387,12 @@ def metricas_dinamica(pan, est):
             f_mkt = mkt[1:] / np.maximum(mkt[:-1], 1e-9)
             pasos = (P[:, 1:] / np.maximum(P[:, :-1], 1e-9)) / f_mkt - 1
         pasos = np.where(P[:, :-1] >= 10, pasos, np.nan)   # base mínima por paso
+        # anular pasos que tocan un mes de STOCKOUT (base o destino): la caída
+        # fue por falta de inventario, no por demanda (usuario 2026-08-13)
+        if stockout is not None:
+            so = stockout[cols].values
+            malo = so[:, :-1] | so[:, 1:]
+            pasos = np.where(malo, np.nan, pasos)
         n_valid = np.isfinite(pasos).sum(axis=1)
         with np.errstate(all="ignore"):
             mediana = np.nanmedian(np.where(np.isfinite(pasos), pasos, np.nan), axis=1)
@@ -763,7 +793,7 @@ def main():
     est["no_rota"] = no_rota
     est["precio_pre_aumento"] = precio_pre
     # dinámica de demanda: crecimiento vs mercado y cobertura de stock
-    est = est.join(metricas_dinamica(pan, est))
+    est = est.join(metricas_dinamica(pan, est, exist))
     # rol de precio (KVI / Sales Driver / Profit Gen / Estándar)
     est["rol"] = rol_precio(est)
     print(f"  roles de precio: {est.rol.value_counts().to_dict()}", flush=True)

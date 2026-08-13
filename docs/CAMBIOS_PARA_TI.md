@@ -16,6 +16,22 @@ auditado ronda 4"). El zip `motor-precios-v3-entrega.zip` corresponde a
 
 ---
 
+## (este commit) — 2026-08-13 · Crecimiento de demanda excluye meses sub-stockeados
+
+### BUG CORREGIDO (usuario, caso ACCESSTAGV2): stockout ≠ baja de demanda
+- **Qué**: `metricas_dinamica` (escenarios.py) calculaba el crecimiento
+  mes-vs-mes con venta cruda; un modelo que se queda SIN STOCK SUFICIENTE
+  (ACCESSTAGV2: 321-825 uds para ~10K/sem en jun-jul) mostraba caída y se
+  etiquetaba "demanda cayendo" en falso. Fix: se anulan los pasos que tocan
+  un mes SUB-STOCKEADO (≥50% de sus semanas con disponible < 1 semana de su
+  demanda típica) — misma filosofía que la exclusión de stockout en ε y meses
+  de stock. Efecto: ACCESSTAGV2 pasa de −33% a +14% de crecimiento; 204
+  modelos salen de la etiqueta falsa de demanda cayendo (2,018 → 1,814).
+- **Nota**: la gráfica del detallado SÍ tenía los datos completos (hasta la
+  semana vigente); el hundimiento visual jun-jul era el stockout real, no un
+  corte de datos.
+- **Archivos**: `escenarios.py` (`metricas_dinamica` recibe `exist`).
+
 ## (este commit) — 2026-08-13 · Costo del proveedor desde revision_precios
 
 ### tipo_proveedor agregado (usuario 2026-08-13) — el resto descartado
