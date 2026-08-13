@@ -16,6 +16,24 @@ auditado ronda 4"). El zip `motor-precios-v3-entrega.zip` corresponde a
 
 ---
 
+## (este commit) — 2026-08-13 · Costo del proveedor desde revision_precios
+
+### NUEVA FUENTE DE COSTO (usuario 2026-08-13): reportes.revision_precios
+- **Qué**: la vigía diaria toma `costo_proveedor` de `reportes.revision_precios`
+  (tabla del ERP dedicada a precios, catálogo COMPLETO ~137K modelos con
+  costo, refrescada a diario por `fecha_insercion`) como fuente TITULAR del
+  costo; `valor_inventario.costo_prov` queda de RESPALDO. Validado idéntico:
+  99.9% de los modelos coinciden al ±1%, dif mediana 0.000% — misma cifra,
+  fuente más limpia. Nueva columna `costo_fuente` en el snapshot de vigía
+  (revision_precios / valor_inventario). 1ª corrida: 12,665 de 12,671
+  códigos del motor tomaron el costo de revision_precios.
+- **Por qué**: origen dedicado a precios (no derivado de inventario) y con más
+  contexto disponible (costo_promedio, arancel, costo en pesos/dólares, tipo
+  de proveedor, oferta/catálogo) — el detector de cambios de costo de la
+  vigía (defensa de margen, umbral ±2%) ahora arranca de ahí.
+- **Archivos**: `vigia_diaria.py` (`_costo_revision` + snapshot).
+- Análisis de las otras 40 columnas de la tabla: EN CURSO (2º plano).
+
 ## (este commit) — 2026-08-10 · Duelo de ranking semántico: MiniLM se queda
 
 ### `duel_rerank.py` — campeón-retador con juez fijado ex-ante

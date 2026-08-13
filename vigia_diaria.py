@@ -61,6 +61,30 @@ def _ultima_fecha():
     raise RuntimeError("sin snapshot de inventario en los últimos 6 días")
 
 
+def _costo_revision(fecha):
+    """COSTO desde reportes.revision_precios (usuario 2026-08-13): tabla del
+    ERP dedicada a precios, catálogo completo (~137K con costo), refrescada a
+    diario por fecha_insercion. Su costo_proveedor es IDÉNTICO al costo_prov de
+    valor_inventario (validado: 99.9% al ±1%, dif mediana 0.000%) pero es la
+    fuente TITULAR del costo — más limpia y con más contexto de precios.
+    Devuelve Series codigo→costo de la foto de esa fecha (o None si falla)."""
+    try:
+        from db import query
+        _, filas = query(
+            "SELECT /*+ MAX_EXECUTION_TIME(120000) */ modelo, "
+            "MAX(CAST(costo_proveedor AS DECIMAL(18,6))) "
+            "FROM `reportes`.`revision_precios` "
+            "WHERE fecha_insercion >= %s AND fecha_insercion < DATE_ADD(%s, INTERVAL 1 DAY) "
+            "AND costo_proveedor > 0 GROUP BY modelo", (fecha, fecha))
+        if not filas:
+            return None
+        s = pd.Series({m: float(c) for m, c in filas if c is not None})
+        return s[s > 0]
+    except Exception as e:
+        print(f"  costo de revision_precios no disponible ({str(e)[:50]})", flush=True)
+        return None
+
+
 def _snapshot_aurora(fecha):
     """PLAN B (2026-07-30, Redshift caído): mismo snapshot pero directo de
     Aurora vía VPN — una sola consulta agregada; se filtra a códigos del motor
@@ -120,6 +144,18 @@ def snapshot(fecha=None):
         raise RuntimeError(f"sin datos de inventario para {fecha} en ninguna fuente")
     for c in ["existencia", "bo", "costo_prov", "precio_1", "precio_3"]:
         snap[c] = pd.to_numeric(snap[c], errors="coerce")
+    # COSTO titular = revision_precios (usuario 2026-08-13); valor_inventario
+    # queda de respaldo donde revision no tenga el modelo esa fecha
+    cr = _costo_revision(fecha)
+    snap["costo_fuente"] = "valor_inventario"
+    if cr is not None:
+        m = snap.codigo.map(cr)
+        usa = m.notna() & (m > 0)
+        snap.loc[usa, "costo_prov"] = m[usa].values
+        snap.loc[usa, "costo_fuente"] = "revision_precios"
+        print(f"  costo titular de revision_precios: {int(usa.sum()):,} de "
+              f"{len(snap):,} códigos ({int((~usa).sum()):,} respaldo valor_inventario)",
+              flush=True)
     snap["fecha"] = fecha
     snap["fuente"] = fuente
     snap.to_parquet(ruta, index=False)
