@@ -18,6 +18,19 @@ auditado ronda 4"). El zip `motor-precios-v3-entrega.zip` corresponde a
 
 ## (este commit) — 2026-08-13 · Costo del proveedor desde revision_precios
 
+### tipo_proveedor agregado (usuario 2026-08-13) — el resto descartado
+- **Qué**: de las 41 columnas de revision_precios solo se adopta
+  `tipo_proveedor` (categoría comercial: Seguridad, Redes inalámbricas,
+  Radios, Control de acceso…), 100% poblado — llega en el snapshot de vigía
+  (columna `tipo_prov`) y en el registro de revisión de costos
+  (`out/revision_costos.csv`), visible en el tooltip del chip 💲. Descartados
+  con dato: catálogo/oferta/página (congelados 2016-18), arancel (4%,
+  costo ya neto), dolares_pesos (es etiqueta de moneda, no tc),
+  fecha_ultima_compra (2012), existencia_transito (aprobado NO integrar).
+- **Análisis diario**: el detector de costos ya corre a diario en el cron
+  (vigía en seguimiento_frenos 8:30); ahora arranca del costo de
+  revision_precios y arrastra tipo_proveedor.
+
 ### NUEVA FUENTE DE COSTO (usuario 2026-08-13): reportes.revision_precios
 - **Qué**: la vigía diaria toma `costo_proveedor` de `reportes.revision_precios`
   (tabla del ERP dedicada a precios, catálogo COMPLETO ~137K modelos con

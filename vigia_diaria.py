@@ -62,26 +62,29 @@ def _ultima_fecha():
 
 
 def _costo_revision(fecha):
-    """COSTO desde reportes.revision_precios (usuario 2026-08-13): tabla del
-    ERP dedicada a precios, catálogo completo (~137K con costo), refrescada a
-    diario por fecha_insercion. Su costo_proveedor es IDÉNTICO al costo_prov de
-    valor_inventario (validado: 99.9% al ±1%, dif mediana 0.000%) pero es la
-    fuente TITULAR del costo — más limpia y con más contexto de precios.
-    Devuelve Series codigo→costo de la foto de esa fecha (o None si falla)."""
+    """COSTO + TIPO DE PROVEEDOR desde reportes.revision_precios (usuario
+    2026-08-13): tabla del ERP dedicada a precios, catálogo completo (~137K con
+    costo), refrescada a diario por fecha_insercion. Su costo_proveedor es
+    IDÉNTICO al costo_prov de valor_inventario (validado: 99.9% al ±1%, dif
+    mediana 0.000%) pero es la fuente TITULAR del costo — más limpia. Además
+    trae tipo_proveedor (categoría comercial: Seguridad, Redes, Radios…),
+    100% poblado, para segmentar. Devuelve DataFrame codigo/costo/tipo_prov."""
     try:
         from db import query
         _, filas = query(
             "SELECT /*+ MAX_EXECUTION_TIME(120000) */ modelo, "
-            "MAX(CAST(costo_proveedor AS DECIMAL(18,6))) "
+            "MAX(CAST(costo_proveedor AS DECIMAL(18,6))) AS cp, "
+            "MAX(tipo_proveedor) AS tipo_prov "
             "FROM `reportes`.`revision_precios` "
             "WHERE fecha_insercion >= %s AND fecha_insercion < DATE_ADD(%s, INTERVAL 1 DAY) "
-            "AND costo_proveedor > 0 GROUP BY modelo", (fecha, fecha))
+            "GROUP BY modelo", (fecha, fecha))
         if not filas:
             return None
-        s = pd.Series({m: float(c) for m, c in filas if c is not None})
-        return s[s > 0]
+        d = pd.DataFrame(filas, columns=["codigo", "costo_rev", "tipo_prov"])
+        d["costo_rev"] = pd.to_numeric(d.costo_rev, errors="coerce")
+        return d.set_index("codigo")
     except Exception as e:
-        print(f"  costo de revision_precios no disponible ({str(e)[:50]})", flush=True)
+        print(f"  revision_precios no disponible ({str(e)[:50]})", flush=True)
         return None
 
 
@@ -145,16 +148,19 @@ def snapshot(fecha=None):
     for c in ["existencia", "bo", "costo_prov", "precio_1", "precio_3"]:
         snap[c] = pd.to_numeric(snap[c], errors="coerce")
     # COSTO titular = revision_precios (usuario 2026-08-13); valor_inventario
-    # queda de respaldo donde revision no tenga el modelo esa fecha
+    # queda de respaldo donde revision no tenga el modelo esa fecha. Además
+    # trae tipo_proveedor (categoría comercial) para segmentar.
     cr = _costo_revision(fecha)
-    snap["costo_fuente"] = "valor_inventario"
+    snap["costo_fuente"], snap["tipo_prov"] = "valor_inventario", ""
     if cr is not None:
-        m = snap.codigo.map(cr)
+        m = snap.codigo.map(cr.costo_rev)
         usa = m.notna() & (m > 0)
         snap.loc[usa, "costo_prov"] = m[usa].values
         snap.loc[usa, "costo_fuente"] = "revision_precios"
+        snap["tipo_prov"] = snap.codigo.map(cr.tipo_prov).fillna("").astype(str)
         print(f"  costo titular de revision_precios: {int(usa.sum()):,} de "
-              f"{len(snap):,} códigos ({int((~usa).sum()):,} respaldo valor_inventario)",
+              f"{len(snap):,} códigos ({int((~usa).sum()):,} respaldo valor_inventario) "
+              f"| tipo_proveedor: {int(snap.tipo_prov.ne('').sum()):,} etiquetados",
               flush=True)
     snap["fecha"] = fecha
     snap["fuente"] = fuente
@@ -179,7 +185,13 @@ def _registrar_revision_costos(df):
     reg = (pd.read_csv(ruta) if os.path.exists(ruta) else
            pd.DataFrame(columns=["codigo", "fecha_detectado", "fecha_ultimo",
                                  "costo_base", "costo_hoy", "pct",
-                                 "margen_antes", "margen_nuevo"]))
+                                 "margen_antes", "margen_nuevo", "tipo_prov"]))
+    if "tipo_prov" not in reg.columns:
+        reg["tipo_prov"] = ""
+    # tipo de proveedor del snapshot de hoy (usuario 2026-08-13): categoría
+    # comercial para segmentar la revisión por costo
+    tprov = (df.set_index("codigo").tipo_prov if "tipo_prov" in df.columns
+             else pd.Series(dtype=str))
     try:
         recos = pd.read_csv(os.path.join(BASE, "out", "recomendaciones.csv"))
         marg = recos.set_index("codigo").margen_actual
@@ -196,18 +208,20 @@ def _registrar_revision_costos(df):
             # EVENTO NUEVO (base y margen frescos); si no, el pct acumularía
             # contra un costo de otra época y el margen se descontaría DOS veces
             vivo = (pd.Timestamp(hoy) - pd.Timestamp(reg.at[i, "fecha_ultimo"])).days <= 21
+        tp = str(tprov.get(r.codigo, "") or "")
         if vivo:
             base = float(reg.at[i, "costo_base"])
             reg.at[i, "costo_hoy"] = r.hoy
             reg.at[i, "pct"] = round(100 * (r.hoy / base - 1), 1)
             reg.at[i, "fecha_ultimo"] = hoy
+            reg.at[i, "tipo_prov"] = tp
             if pd.notna(m0):
                 reg.at[i, "margen_nuevo"] = round(1 - (r.hoy / base) * (1 - m0), 4)
         else:
             reg = reg[reg.codigo != r.codigo].reset_index(drop=True)
             m1 = round(1 - (r.hoy / r.antes) * (1 - m0), 4) if pd.notna(m0) else float("nan")
             reg.loc[len(reg)] = [r.codigo, hoy, hoy, r.antes, r.hoy,
-                                 round(100 * (r.hoy / r.antes - 1), 1), m0, m1]
+                                 round(100 * (r.hoy / r.antes - 1), 1), m0, m1, tp]
     # purga de filas expiradas sin movimiento nuevo (solo estorban el conteo)
     reg = reg[(pd.Timestamp(hoy) - pd.to_datetime(reg.fecha_ultimo)).dt.days <= 45]
     reg.to_csv(ruta, index=False)

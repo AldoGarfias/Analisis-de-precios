@@ -149,7 +149,8 @@ def generar(n_paneles=30, n_top=200):
             costo_map[e.codigo] = [
                 float(e.pct), str(e.fecha_ultimo),
                 (round(100 * e.margen_antes, 1) if pd.notna(e.margen_antes) else None),
-                (round(100 * e.margen_nuevo, 1) if pd.notna(e.margen_nuevo) else None)]
+                (round(100 * e.margen_nuevo, 1) if pd.notna(e.margen_nuevo) else None),
+                (str(e.tipo_prov) if "tipo_prov" in rc.columns and pd.notna(e.tipo_prov) else "")]
     # ---- SEMÁFORO COMPETITIVO (semaforo.py): campo 28 + vista dedicada ----
     sem_mod, filas3 = {}, []
     ruta_sm = os.path.join(BASE, "data", "competencia", "semaforo_modelo.parquet")
@@ -693,9 +694,10 @@ function celdas(f){
   if (anclaArr) badge += ' <span class="badge b-azul" title="⚓ ANCLA DE CANASTA: sus compañeros de folio pierden ~$'+anclaArr.toLocaleString()+'/sem si este precio sube (elasticidad cruzada del estudio de pares-evento con filtro duro, corrida 2026-07-31 — regenerable con analisis_canasta.py estricto) — el SUBIR se bloqueó para proteger la canasta completa">⚓ ANCLA −$'+anclaArr.toLocaleString()+'/sem</span>';
   if (remN) badge += ' <span class="badge b-rojo" title="Producto en REMATE'+(remN.startsWith("R")?" nivel "+remN:"")+' (clasificación del ERP): ya no se comercializa — si vende, dejar agotar el stock sin mover precio; el canal de remate gobierna. SUBIR/BAJAR bloqueados por regla.">🏷️ REMATE'+(remN.startsWith("R")?" "+remN:"")+'</span>';
   if (costoMov) {
-    const [cp, cf, m0, m1] = costoMov;
+    const [cp, cf, m0, m1, tprov] = costoMov;
     const up = cp > 0;
     badge += ' <span class="badge '+(up?'b-rojo':'b-azul')+'" title="Vigía diaria ('+cf+'): el costo del proveedor '+(up?'subió':'bajó')+' '+(up?'+':'')+cp+'%'
+      + (tprov ? ' · categoría: '+tprov : '')
       + (m0!==null && m1!==null ? ' — margen estimado al precio actual: '+m0+'% → '+m1+'%' : '')
       + '. '+(up?'Revisar precio: el margen se comprime (si rompe el piso costo+3pts, la defensa de margen ya alertó con la lista mínima).':'Oportunidad: el margen se amplió — evaluar capturar margen o bajar para ganar volumen.')
       + '">'+(up?'🔺 COSTO +':'🔻 COSTO ')+cp+'%</span>';
