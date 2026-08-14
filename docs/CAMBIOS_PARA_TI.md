@@ -16,6 +16,172 @@ auditado ronda 4"). El zip `motor-precios-v3-entrega.zip` corresponde a
 
 ---
 
+## (este commit) — 2026-08-14 · AUDITOR DE COSTOS: restauración de factor (nueva sección)
+
+- **Qué**: sección nueva del reporte, `🧾 Auditor de costos`. Implementa la
+  **política de precios de SYSCOM** —ante un costo nuevo, el precio se re-arma
+  con el **mismo factor**— como una decisión SEPARADA de la del motor.
+  Sustituye al filtro `💲 Costo movió`, que sólo notificaba el cambio (igual
+  que el chip 🔺/🔻 de cada fila) sin nada con qué juzgarlo.
+- **Por qué son dos decisiones y no una**: el motor decide el **nivel** del
+  precio (elasticidad, competencia, paso máximo de ±4pts por ciclo de 3
+  semanas). El auditor decide la **recuperación de costo**, que es defensa de
+  estructura, no optimización — y por eso está **exento del ±4pts**: el 83% de
+  los eventos medidos requiere más de 4%. Restaurar el factor mueve el precio
+  exactamente el mismo % que el costo.
+- **Fórmulas**:
+  `factor = precio_aplicable / costo_base` (aplicable = precio_3 si >0, si no
+  precio_1) · `precio_politica = costo_nuevo × factor` · `alza_precio% = Δcosto%`
+  · `efecto_volumen% = ε × alza_precio%`.
+  ⚠️ `margen_antes/margen_nuevo` de `out/revision_costos.csv` vienen de
+  `margen_actual`, que es margen sobre el **NETO REALIZADO** (después de
+  descuentos), NO sobre la lista: sirven para mostrar compresión de margen,
+  **jamás para derivar el factor** (el neto realiza sólo ~60% de la lista).
+- **Veredicto** (no es un score: es una decisión con razón nombrada):
+  `APLICAR` sin freno · `FRENO` con causa (remate/salida → sobrestock ≥12m →
+  holdout, en ese orden de prioridad) · `CONFIRMAR COSTO` si el movimiento se
+  vio sólo en el costo pagado · `BAJA` si el costo bajó (la política implica
+  bajar; la asimetría legítima es de velocidad, no de destino) · `YA APLICADO`
+  si el precio se movió >1% desde la detección.
+- **DOS REGLAS DEL NEGOCIO (usuario 2026-08-14) que acotan el veredicto**:
+  1. **El precio del competidor es REFERENCIA, no dato duro.** Se muestra en el
+     renglón para dar contexto, pero **nunca frena un aumento**. Se eliminó el
+     freno `cp` (competidor ya por debajo). Impacto numérico hoy: **0 eventos**
+     —pedía gap>0 *y* AMENAZA REAL a la vez— pero habría disparado después.
+  2. **No existe traslado "a medias".** Se eliminó el veredicto `PARCIAL`
+     (traslado parcial por pocos clientes): la postura es que es preferible que
+     el cliente reclame que estamos caros a dejar el precio abajo. De los 37
+     que caían ahí, 7 pasaron a `APLICAR` y 30 a `CONFIRMAR COSTO` (eran de
+     costo pagado). Coincide con nuestra medición: el tramo de traslado 0-50%
+     fue el PEOR resultado (−7.1% de venta *y* −2.6 pts de margen).
+  Con esto los motivos de `FRENO` quedan en **tres y sólo tres**: sobrestock,
+  remate/salida y holdout — todos verificables contra un dato duro.
+  `REVISAR` se renombró a **`CONFIRMAR COSTO`** (el punto es el costo, no el
+  trámite con el proveedor).
+- **Payload de decisión** (con su cobertura real sobre 432 eventos): efecto en
+  volumen `ε × alza` 88.7% · mezcla de canal y nº de clientes 96.8% ·
+  **historia propia del modelo 40.5%** (lo que de verdad pasó la última vez que
+  le movieron el costo: traslado, venta y margen — ya estaba calculado en
+  `data/analisis_costos.parquet` y nadie lo veía) · crecimiento con **bandera de
+  stock restringido** 60.6% (sin ella, una caída por falta de inventario se lee
+  como demanda cayendo — el error de ACCESSTAGV2) · semáforo competitivo 17.8% ·
+  sobrestock/holdout/remate 16.0%/8.6%/0.9%.
+- **Agrupado por PROVEEDOR**: las oleadas de costo llegan por lotes (top 5
+  proveedores = 54% de los eventos) y el factor es una convención del proveedor
+  (explica R²oos 0.51 de su varianza; la huella de comportamiento del modelo
+  sólo 0.11). La unidad de decisión es el proveedor, no el modelo.
+  **Clic en un proveedor despliega TODOS sus modelos ahí mismo** (acordeón;
+  varios a la vez; el desplegado ignora el filtro de veredicto de arriba, a
+  propósito). El renderizador de fila se extrajo a `filaAud(f)` y lo usan tanto
+  la tabla de eventos como el acordeón, para que no se separen con el tiempo.
+  Se **quitó el tope de 40 proveedores**: con él, los 183 restantes de 223 no se
+  podían ni abrir. Van ordenados por dinero en juego.
+- **KPI nuevo — days-to-react** (`dias`, visible en TODOS los renglones,
+  usuario 2026-08-14). Dos piezas distintas:
+  · **¿ya reaccionó?** se resuelve comparando contra el snapshot diario de la
+    vigía del día en que se detectó el costo (`data/vigia/snap_*.parquet`), no
+    contra un precio inferido.
+  · **¿hace cuántos días?** sale de la fecha, NO del snapshot, para que aplique
+    también a los eventos del panel (que caen en semanas sin foto).
+  Para los eventos del panel, `fecha_detectado` es **la semana del salto** —la
+  primera en que el costo ya se separó ≥2% de su base—, no la primera semana de
+  la ventana: con lo segundo el reloj habría dicho ~60 días para todos, que es
+  el tamaño de la ventana y no el tiempo que el costo lleva movido.
+  Semáforo del reloj: gris <7d, ámbar 7-20d, **rojo ≥21d** (un ciclo completo
+  de decisión). Este umbral **lo fijamos nosotros**: la revisión de literatura
+  confirmó que no existe ningún SLA de días publicado, ni de consultoría ni
+  académico, para reaccionar a un alza de costo de proveedor.
+  Estado hoy: mediana **25 días** desde que se movió el costo; 1,109 eventos
+  llevan más de 3 semanas (sólo 21 de ellos siguen pendientes de aplicar); de
+  los 34 que ya se movieron, mediana de **11 días** en reaccionar.
+- **Filtro `✓ Ya se hizo`** en la barra de la sección (usuario 2026-08-14):
+  34 eventos, $21,677/sem. Sirve para medir la velocidad de reacción, no para
+  actuar.
+- **Ventana de 2 meses con DOS fuentes de costo, etiquetadas y nunca mezcladas**
+  (usuario 2026-08-14). `VIGENCIA_D = 60`. La vigía sólo arrancó el 2026-07-28,
+  así que por sí sola no llega a 2 meses (su evento más viejo tiene 16 días):
+  ampliar el filtro no agregaba ni una fila. Se suma una segunda fuente:
+  · **«lista del proveedor»** — `out/revision_costos.csv`, costo de REPOSICIÓN.
+    Titular: es el costo que la política usa. Diario y preciso.
+  · **«lo que pagamos»** — `costo_prom` del panel (COGS de las ventas de la
+    semana), reconstruido en `_eventos_panel()`: primer costo observado de la
+    ventana contra el último (acumula como la vigía; cambio semana-a-semana
+    contaría un ida-y-vuelta como dos eventos). Cubre 2024→hoy.
+  Donde ambas ven el mismo modelo, **gana la vigía**. Los eventos que sólo
+  aparecen en COGS **nunca** salen como «subir»: salen como **REVISAR**, porque
+  un movimiento del costo pagado puede venir de una compra puntual o de mezcla
+  de lotes y no prueba que el proveedor cambió su lista.
+- **Textos en lenguaje llano** (usuario 2026-08-14): las etiquetas dicen QUÉ
+  HACER, no el nombre interno de la regla — `🟢 SUBIR el precio` /
+  `🔴 NO subir por ahora` / `🟠 Hablar con el cliente` / `🔵 BAJAR el precio` /
+  `🔎 Confirmar con el proveedor` / `✓ Ya se hizo` / `Faltan datos`. Se agregó
+  una **tarjeta de leyenda** en la propia sección que explica las 7 en prosa, y
+  se eliminó la jerga de todos los textos visibles (elasticidad, sobrestock,
+  holdout, COGS, ±4pts, «asimetría de velocidad no de destino», factor sin
+  explicar). Verificado: 0 ocurrencias de jerga en el HTML de la vista.
+- **La razón viaja como CÓDIGO, no como texto** (`razon_cod`) y se arma en JS
+  con los números de la propia fila: con 2,150 eventos, 0.30 MB de prosa
+  repetida hacían que el HTML pasara de 16 MB (límite de publicación). Quedó en
+  15.79 MB. `out/auditor_costos.parquet` conserva la columna `razon` completa.
+- **OJO al construir HTML en JS**: los `onclick` que reciben texto deben usar
+  comillas simples escapadas (`onclick="f(\'`+x+`\')"`), como ya hacía el resto
+  del archivo. Usé `JSON.stringify()` y sus comillas dobles rompían el atributo
+  dentro del atributo: el nombre del proveedor se parseaba como atributos HTML
+  (`audProvSet(" hangzhou="" linan=""…`) y el clic quedaba muerto. Para los
+  nombres de proveedor —que traen `&`, comillas y apóstrofos— la solución
+  definitiva es **pasar el índice del arreglo, no el texto**.
+- **Resultado de la corrida a 2 meses** (pipeline completo del 2026-08-14,
+  2,150 eventos, 223 proveedores): CONFIRMAR CON PROVEEDOR 783 ($488,624/sem) ·
+  BAJAR 544 ($213,351/sem) · NO SUBIR 342 ($99,519/sem) · **SUBIR 230**
+  (alza mediana **+6.7%**, $48,439/sem, **85% requiere más de 4%**) ·
+  faltan datos 190 (no están en la lista que vigila la vigía; cobertura de
+  precio 91%) · HABLAR CON EL CLIENTE 37 · YA SE HIZO 24.
+  **Sólo llegan a SUBIR eventos con costo de reposición**, por diseño.
+- **Archivos**: `auditor.py` (nuevo, corre solo y escribe
+  `out/auditor_costos.parquet`), `reporte_top.py` (vista `vista-auditor`,
+  `FILAS4`/`PROV4`, `pintarA`/`setAud`/`exportaAud`; se retiran el botón `f_C`
+  y `setCosto()`).
+- **Sin escritura a BD**: el CSV de exportación (`modelo,
+  precio_por_politica, comentario`) va al flujo auditado del ERP, con etiqueta
+  `Auditor de costos v3 | ciclo <corte> | factor <f> restaurado`. **Sólo exporta
+  los de veredicto `APLICAR`**, que por diseño son únicamente los de costo de
+  reposición — los de `CONFIRMAR COSTO` quedan fuera (ver PENDIENTE abajo).
+
+### ⚠️ PENDIENTE — el factor de los eventos de COGS se calcula contra la base equivocada
+
+**Detectado 2026-08-14 (usuario, revisando PROCAT5EXTLITE). Las reglas están por
+definir; NO se ha corregido.**
+
+En los eventos cuya fuente es el costo PAGADO, `factor_antes` se calcula como
+`precio_vigente / costo_base`, donde `costo_base` es el COGS de la primera semana
+de la ventana — que puede estar muy lejos del costo de REPOSICIÓN vigente.
+
+Caso que lo destapó, **PROCAT5EXTLITE**:
+
+| | |
+|---|---|
+| COGS: $67.39 estable 8 semanas → $78.83 | el auditor lo lee como **+17.0%** |
+| Costo del proveedor en los 7 snapshots | **$80.00, plano, nunca se movió** |
+| Factor que usa el auditor | 198.38 ÷ 67.39 = **2.94** |
+| Factor real contra reposición | 198.38 ÷ 80.00 = **2.48** |
+| "Precio por política" que sugiere | **$232** (factor real resultante 2.90) |
+
+No hubo alza del proveedor: se acabó el inventario comprado a $67.39 y ahora se
+vende el comprado cerca de $80, o sea el COGS convergiendo a la lista. Es
+**rotación de inventario, no un cambio de costo**.
+
+*Riesgo contenido hoy*: esos casos nunca llegan a `APLICAR` ni al CSV, y el
+texto del veredicto dice explícitamente que hay que confirmar el costo. Pero el
+**precio sugerido sí se muestra en pantalla** y podría tomarse como bueno.
+
+*Dirección probable del arreglo* (a definir): en eventos de COGS, calcular el
+factor y el precio sugerido contra `costo_prov` del snapshot cuando exista; si
+no existe, no mostrar precio sugerido. Falta decidir qué hacer cuando el COGS
+supera al costo de reposición y cómo distinguir rotación de inventario de un
+alza real que la vigía todavía no alcanzó a ver (arrancó el 2026-07-28).
+
+---
+
 ## (este commit) — 2026-08-13 · Crecimiento de demanda excluye meses sub-stockeados
 
 ### BUG CORREGIDO (usuario, caso ACCESSTAGV2): stockout ≠ baja de demanda

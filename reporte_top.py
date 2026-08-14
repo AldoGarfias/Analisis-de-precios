@@ -180,6 +180,62 @@ def generar(n_paneles=30, n_top=200):
         print(f"  semáforo competitivo: {len(sem_mod):,} modelos en el reporte "
               f"({len(filas3):,} pares en la vista)", flush=True)
 
+    # ---- AUDITOR DE COSTOS (auditor.py): vista dedicada, agrupada por -----
+    # PROVEEDOR porque las oleadas de costo llegan por proveedor (top 5 = 54%
+    # de los eventos) y el factor vive en el proveedor (R²oos 0.51 vs 0.11 de
+    # la huella de comportamiento). Sustituye al filtro '💲 Costo movió', que
+    # sólo notificaba el cambio sin nada con qué juzgarlo (usuario 2026-08-14).
+    filas4, prov4 = [], []
+    try:
+        import auditor
+        AU = auditor.construir()
+    except Exception as e:
+        AU = pd.DataFrame()
+        print(f"  auditor de costos: no disponible ({e})", flush=True)
+    if len(AU):
+        V_COD = {"APLICAR": "A", "FRENO": "F", "CONFIRMAR COSTO": "R",
+                 "BAJA": "B", "YA APLICADO": "Y", "SIN DATO": "S"}
+        def _n(v, d=None):
+            return (None if v is None or pd.isna(v) else
+                    (round(float(v), d) if d is not None else float(v)))
+        def _s(v):
+            # OJO: `NaN or ""` devuelve NaN (NaN es truthy) ⇒ str() pintaría "nan"
+            return "" if v is None or (isinstance(v, float) and pd.isna(v)) else str(v)
+        for x in AU.itertuples():
+            hist = None
+            if pd.notna(getattr(x, "h_pass_through", np.nan)):
+                hist = [_n(x.h_d_costo_pct, 1), _n(100 * x.h_pass_through, 0),
+                        _n(x.h_d_venta_pct, 1), _n(x.h_d_margen_pts, 1)]
+            filas4.append([
+                str(x.codigo), _s(x.proveedor), V_COD.get(str(x.veredicto), "S"),
+                _s(getattr(x, "razon_cod", "")), _n(x.pct, 1), _n(x.alza_precio_pct, 1),
+                _n(x.factor_antes, 2), _n(x.precio_vig, 2), _n(x.precio_pol, 2),
+                _n(x.dano_pct, 1), _s(x.confianza), _n(x.eps, 2),
+                _n(x.u_sem_actual, 1), _n(x.utilidad_sem_mantener, 0),
+                _n(x.n_clientes, 1), _n(100 * x.pct_linea if pd.notna(x.pct_linea) else None, 0),
+                _n(x.meses_inv, 1), _n(100 * x.crecimiento if pd.notna(x.crecimiento) else None, 0),
+                bool(getattr(x, "crec_sospechoso", False)), _n(x.comp_gap, 0),
+                _s(x.comp_sem), hist, _n(x.dias, 0),
+                _n(100 * x.margen_antes if pd.notna(x.margen_antes) else None, 1),
+                _n(100 * x.margen_nuevo if pd.notna(x.margen_nuevo) else None, 1),
+                _s(x.tipo_prov), (_safe(str(x.codigo)) if str(x.codigo) in con_panel else None),
+                _s(getattr(x, "fuente_costo", "")),
+            ])
+        # resumen por proveedor: la oleada es la unidad de decisión
+        gp = AU.assign(_ap=(AU.veredicto == "APLICAR").astype(int),
+                       _fr=(AU.veredicto == "FRENO").astype(int),
+                       _rv=(AU.veredicto == "REVISAR").astype(int)).groupby(
+            AU.proveedor.fillna("(sin censo)"))
+        for nm, g in gp:
+            prov4.append([str(nm), int(len(g)), _n(g.pct.median(), 1),
+                          _n(g.utilidad_sem_mantener.sum(), 0),
+                          int(g._ap.sum()), int(g._fr.sum()), int(g._rv.sum())])
+        prov4.sort(key=lambda p: -(p[3] or 0))
+        filas4.sort(key=lambda f: -(f[13] or 0))
+        vc = AU.veredicto.value_counts()
+        print(f"  auditor de costos: {len(AU)} eventos · " +
+              " · ".join(f"{k} {v}" for k, v in vc.items()) +
+              f" · {len(prov4)} proveedores", flush=True)
 
     filas = []
     for _, x in r.iterrows():
@@ -431,6 +487,7 @@ def generar(n_paneles=30, n_top=200):
     <button class="btn btn-v" id="v_dorm" onclick="setVista('dorm')">💤 Dormidos (2ª capa) · {n_dorm:,} · {_usd(cap_dorm,0)} atrapados</button>
     <button class="btn btn-v" id="v_sim" onclick="setVista('sim')">🧮 Simulador de escenarios</button>
     <button class="btn btn-v" id="v_comp" onclick="setVista('comp')">⚔ Competencia · {len(sem_mod):,} modelos</button>
+    <button class="btn btn-v" id="v_aud" onclick="setVista('aud')" title="Restauración de factor por movimiento de costo: la política de SYSCOM (costo nuevo × mismo factor), con el payload para juzgar si el traslado va al 100%. Exento del paso de ±4pts porque es defensa de estructura, no optimización.">🧾 Auditor de costos · {len(filas4):,} eventos</button>
   </div>
 
   <div id="vista-motor">
@@ -439,7 +496,6 @@ def generar(n_paneles=30, n_top=200):
     <button class="btn btn-f" id="f_S" onclick="setDir('S')">Subir</button>
     <button class="btn btn-f" id="f_B" onclick="setDir('B')">Bajar</button>
     <button class="btn btn-f" id="f_M" onclick="setDir('M')">Conservar</button>
-    <button class="btn btn-f" id="f_C" onclick="setCosto()" title="Modelos cuyo costo de proveedor subió o bajó ≥2% en los últimos 21 días (vigía diaria) — disparan revisión de precio">💲 Costo movió · {n_costo}</button>
     <select class="btn" id="sel_rol" onchange="pintar()">
       <option value="">Rol: todos</option><option value="KVI">KVI · imagen de precio</option><option value="Sales Driver">Sales Driver · jala ventas</option>
       <option value="Profit Gen">Profit Gen · deja margen</option><option value="Estándar">Estándar</option>
@@ -524,6 +580,95 @@ def generar(n_paneles=30, n_top=200):
   </div>
   </div><!-- /vista-competencia -->
 
+  <div id="vista-auditor" class="oculto">
+  <div class="card" style="margin-bottom:12px">
+    <div class="sec-t">🧾 Auditor de costos — ¿a qué modelos hay que cambiarles el precio porque cambió su costo?</div>
+    <div class="sec-s"><b>Qué hace esta sección.</b> En SYSCOM el precio de un modelo se fija multiplicando su costo
+      por un número —el <b>factor</b>—. Por ejemplo, un modelo con factor 2 y costo de $100 se vende en $200.
+      La política es que <b>cuando el costo cambia, se conserva ese mismo factor</b>: si el costo pasa a $120, el
+      precio pasa a $240. Aquí aparece cada modelo cuyo costo se movió en los <b>últimos 2 meses</b>, con el precio
+      que le tocaría por esa regla y con la información para decidir si conviene aplicarla.<br><br>
+      <b>Por qué está aparte del motor.</b> El motor decide si un precio está bien puesto y lo mueve máximo 4% por
+      ciclo. Esto es otra cosa: es <b>recuperar un costo que ya subió</b>, y el 83% de los casos necesita más de 4%.
+      No es optimizar, es no perder margen — por eso no le aplica ese límite.<br><br>
+      <b>De dónde sale el cambio de costo.</b> Junto a cada porcentaje aparece la fuente del dato.
+      <b>«lista del proveedor»</b> es lo que nos cobraría reponer el producto hoy, tomado de su lista y revisado a
+      diario: es el dato bueno para decidir un precio. <b>«lo que pagamos»</b> es el costo real de las ventas de la
+      semana; permite ver más atrás en el tiempo, pero un movimiento ahí puede venir de una compra puntual o de
+      mezclar lotes de distinto costo, no de un cambio real de lista — por eso esos casos salen siempre como
+      «confirmar con el proveedor» y nunca como «subir el precio».</div>
+  </div>
+  <div class="card" style="margin-bottom:12px">
+    <div class="sec-t">Qué significa cada etiqueta</div>
+    <div class="sec-s">Cada modelo recibe una sola recomendación, y siempre viene con el motivo escrito al lado.
+      <b>El traslado es completo o no es: no existe «subir a medias».</b> Es la postura del negocio —es preferible que
+      el cliente reclame que estamos caros a dejar el precio abajo— y coincide con lo que midieron nuestros propios
+      datos: trasladar entre 0% y 50% del cambio de costo fue el peor resultado de todos (se perdió venta
+      <i>y</i> margen a la vez).<br>
+      <b>El precio de la competencia se muestra como referencia y nunca frena un aumento.</b> Aparece en el renglón
+      para dar contexto, pero no cambia la recomendación.</div>
+    <table>
+      <colgroup><col style="width:22%"><col style="width:78%"></colgroup>
+      <tbody>
+        <tr><td><span class="badge b-verde">🟢 SUBIR el precio</span></td>
+            <td>El costo subió y no encontramos ninguna razón para no pasarlo al precio. El precio sube el mismo
+                porcentaje que subió el costo, que es lo que conserva el factor.</td></tr>
+        <tr><td><span class="badge b-rojo">🔴 NO subir por ahora</span></td>
+            <td>El costo subió, pero subir el precio haría más daño que bien. Siempre se dice por qué, y sólo
+                por tres motivos: hay inventario para muchos meses y encarecerlo lo dejaría parado, el modelo está
+                en remate o salida, o está apartado para medir.</td></tr>
+        <tr><td><span class="badge b-azul">🔵 BAJAR el precio</span></td>
+            <td>El costo bajó. Por la misma política el precio debería bajar lo mismo, pero conviene esperar dos
+                ciclos para confirmar que la baja se sostiene: una baja pasajera no debe mover el precio de lista.</td></tr>
+        <tr><td><span class="badge b-gris">🔎 Confirmar costo</span></td>
+            <td>El costo que pagamos se movió, pero no confirmamos que el proveedor haya cambiado su lista. Puede
+                ser una compra puntual o una mezcla de lotes. Hay que verificar el costo antes de tocar el precio.</td></tr>
+        <tr><td><span class="badge b-gris">✓ Ya se hizo</span></td>
+            <td>El precio ya se movió después de detectarse el cambio de costo. No hay nada pendiente.</td></tr>
+        <tr><td><span class="badge b-gris">Faltan datos</span></td>
+            <td>El modelo no está en la lista de precios que se revisa a diario, así que no tenemos su precio
+                vigente y no se puede calcular cuánto debería moverse.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <button class="btn btn-a btn-pri" id="a_T" onclick="setAud('T')">Todos</button>
+    <button class="btn btn-a" id="a_A" onclick="setAud('A')" title="El costo subió y nada impide pasarlo al precio">🟢 Subir el precio</button>
+    <button class="btn btn-a" id="a_F" onclick="setAud('F')" title="El costo subió, pero subir el precio haría más daño que bien — siempre se dice por qué">🔴 No subir por ahora</button>
+    <button class="btn btn-a" id="a_B" onclick="setAud('B')" title="El costo bajó: por la misma política el precio debería bajar lo mismo">🔵 Bajar el precio</button>
+    <button class="btn btn-a" id="a_R" onclick="setAud('R')" title="Se movió el costo que pagamos, pero no está confirmado que el proveedor cambiara su lista">🔎 Confirmar costo</button>
+    <button class="btn btn-a" id="a_Y" onclick="setAud('Y')" title="El precio ya se movió después de detectarse el cambio de costo: sirve para ver qué tan rápido estamos reaccionando">✓ Ya se hizo</button>
+    <select class="btn" id="sel_aprov" onchange="pintarA()"><option value="">Proveedor: todos</option></select>
+    <input class="btn" id="buscaA" placeholder="Buscar modelo…" oninput="pintarA()" style="min-width:160px">
+    <button class="btn" onclick="exportaAud()" title="Descarga un .csv (modelo, precio_por_politica, comentario) con la selección actual — para el flujo auditado del ERP">⬇ CSV</button>
+  </div>
+  <div class="card" style="margin-bottom:12px">
+    <div class="sec-t">Los cambios agrupados por proveedor <span id="contadorAP" style="color:var(--gris);font-weight:400"></span></div>
+    <div class="sec-s">Los proveedores no suben un modelo suelto: suben lotes completos, muchas veces todos en la
+      misma dirección y el mismo día. Y el factor con el que se fija el precio es, en la práctica, una costumbre de
+      cada proveedor más que algo propio de cada modelo. Por eso conviene decidir por proveedor y no de uno en uno.
+      <b>Clic en un proveedor para desplegar todos sus modelos aquí mismo</b> (clic otra vez para cerrarlo). Se pueden
+      abrir varios a la vez, y el desplegable muestra todos sus modelos aunque arriba tengas un filtro puesto.</div>
+    <table>
+      <colgroup><col style="width:34%"><col style="width:9%"><col style="width:11%"><col style="width:14%"><col style="width:11%"><col style="width:10%"><col style="width:11%"></colgroup>
+      <thead><tr><th>Proveedor</th><th>Modelos</th><th title="El movimiento de costo típico del lote (la mediana): da la magnitud del alza o la baja que mandó este proveedor">Cuánto movió<br>el costo</th><th title="Suma de la ganancia semanal de los modelos de este proveedor: qué tanto está en juego en su decisión">$ por semana<br>en juego</th><th title="Cuántos de sus modelos conviene subir de precio">Subir</th><th title="Cuántos NO conviene subir por ahora, con motivo">No subir</th><th title="Cuántos necesitan que se confirme el costo, porque el movimiento se vio en el costo que pagamos y no en la lista del proveedor">Confirmar costo</th></tr></thead>
+      <tbody id="cuerpoAP"></tbody>
+    </table>
+  </div>
+  <div class="card">
+    <div class="sec-t">Eventos de costo <span id="contadorA" style="color:var(--gris);font-weight:400"></span></div>
+    <div class="sec-s">Ordenados por la ganancia semanal que deja cada modelo, de mayor a menor: los de arriba son
+      los que de verdad mueven la aguja. Pasa el cursor sobre cualquier celda o etiqueta para ver de dónde sale el
+      número; clic en el nombre del modelo (▸) para abrir su análisis completo.</div>
+    <table>
+      <colgroup><col style="width:14%"><col style="width:7%"><col style="width:6%"><col style="width:7%"><col style="width:11%"><col style="width:9%"><col style="width:7%"><col style="width:8%"><col style="width:7%"><col style="width:24%"></colgroup>
+      <thead><tr><th>Modelo</th><th>Proveedor</th><th title="Tres datos: cuánto se movió el costo; de dónde salió ese dato («lista del proveedor» es lo que costaría reponerlo hoy, el bueno para decidir; «lo que pagamos» es el costo real de las ventas de la semana, hay que confirmarlo); y cuántos días lleva movido sin que el precio se ajuste. Nuestro ciclo de decisión es de 3 semanas: pasados 21 días se marca en rojo.">Cuánto se movió<br>el costo y hace cuánto</th><th title="Cuántas veces el costo es el precio. Ejemplo: factor 2 = un modelo que cuesta $100 se vende en $200. Conservarlo con el costo nuevo mueve el precio el mismo % que se movió el costo">Veces el costo<br>(factor)</th><th title="Precio de hoy y precio que le tocaría al conservar el mismo factor con el costo nuevo">Precio hoy → el que<br>tocaría por política</th>
+        <th title="Cuántas unidades más o menos se esperaría vender con ese precio nuevo, según la sensibilidad al precio medida de este modelo. Si no hay una medición confiable, no se muestra">Qué pasaría con<br>la venta</th><th title="Unidades por semana y cuántos clientes distintos lo compran. Con 1 o 2 clientes el alza es una negociación, no un cambio de precio de mercado">Cuánto vende</th><th title="Meses de inventario que hay, y qué parte del volumen se vende por la tienda en línea en lugar de por vendedor (las alzas se sostienen mejor en línea)">Inventario<br>y canal</th><th title="Ganancia semanal que este modelo deja hoy: sirve para saber qué decisiones importan y cuáles no">Ganancia<br>por semana</th><th>Qué conviene hacer y por qué</th></tr></thead>
+      <tbody id="cuerpoA"></tbody>
+    </table>
+  </div>
+  </div><!-- /vista-auditor -->
+
   <div id="vista-sim" class="oculto">
   <div class="card" style="margin-bottom:12px">
     <div class="sec-t">🧮 Simulador de escenarios — ¿qué pasa si movemos el precio n%?</div>
@@ -595,12 +740,9 @@ const PROVS = __PROVS__;
 const SIM = __SIM__;
 const MAX_VISIBLE = 500;
 let dirAct = "T";
-let soloCosto = false;
-function setCosto(){
-  soloCosto = !soloCosto;
-  document.getElementById("f_C").classList.toggle("btn-pri", soloCosto);
-  pintar();
-}
+// (el filtro '💲 Costo movió' se retiró el 2026-08-14: sólo notificaba el
+// cambio, igual que el chip 🔺/🔻 de cada fila. La vista '🧾 Auditor de costos'
+// lo sustituye con el precio por política y el payload para decidir.)
 const usd = v => "$" + Number(v).toLocaleString("en-US", {maximumFractionDigits: 2});
 const usd0 = v => "$" + Number(v).toLocaleString("en-US", {maximumFractionDigits: 0});
 function setDir(d){ dirAct = d;
@@ -764,7 +906,6 @@ function pintar(){
   const sel = FILAS.filter(f =>
     (dirAct==="T" || f[2]===dirAct) && (!rol || f[3]===rol) &&
     (!provSel.size || provSel.has(f[5])) && (!conf || f[4]===conf) &&
-    (!soloCosto || f[25]) &&
     (!q || f[0].toUpperCase().includes(q)));
   document.getElementById("cuerpo").innerHTML = sel.slice(0, MAX_VISIBLE).map(celdas).join("");
   document.getElementById("contador").textContent =
@@ -806,6 +947,191 @@ function pintarC(){
   }).join("");
   document.getElementById("contadorC").textContent = "— "+sel.length.toLocaleString()+" pares"
     +(sel.length>400?" (mostrando 400)":"");
+}
+/* ============== AUDITOR DE COSTOS (restauración de factor) ==============
+   FILAS4: [cod, prov, veredicto, razon, dCosto, alzaPrecio, factor, pVig, pPol,
+            dano, conf, eps, uSem, util, nCli, pctLinea, mesesInv, crec,
+            crecSosp, compGap, compSem, hist, diasSinReacc, mAntes, mNuevo,
+            tipoProv, sid]                                                   */
+const FILAS4 = __FILAS4__, PROV4 = __PROV4__;
+let audAct = "T", audProv = "";
+// Etiquetas en lenguaje llano: dicen QUÉ HACER, no el nombre interno de la regla
+const V_AUD = {
+  A:'<span class="badge b-verde" title="El costo del proveedor subió y no hay ninguna razón para no pasarlo al precio. Por política el precio sube el mismo porcentaje que subió el costo.">🟢 SUBIR el precio</span>',
+  F:'<span class="badge b-rojo" title="El costo subió, pero subir el precio de este modelo haría más daño que bien. La razón de abajo dice exactamente por qué.">🔴 NO subir por ahora</span>',
+  B:'<span class="badge b-azul" title="El costo del proveedor BAJÓ. Por la misma política, el precio debería bajar el mismo porcentaje.">🔵 BAJAR el precio</span>',
+  R:'<span class="badge b-gris" title="Vimos que el costo se movió, pero en el costo que pagamos en las ventas, no en la lista del proveedor. Puede ser una compra puntual o una mezcla de lotes. Hay que confirmar el costo antes de mover el precio.">🔎 Confirmar costo</span>',
+  Y:'<span class="badge b-gris" title="El precio de este modelo ya se movió después de que se detectó el cambio de costo: no hay nada pendiente.">✓ Ya se hizo</span>',
+  S:'<span class="badge b-gris" title="No se puede calcular: este modelo no está en la lista de precios que revisa la vigía diaria, así que no tenemos su precio vigente.">Faltan datos</span>'};
+// la razón viaja como código y se arma aquí con los números de la propia fila
+// (evita 0.30 MB de prosa repetida en 2,150 eventos: el HTML rebasaba los 16 MB)
+function razonAud(c, fa, ap, dn, mi, cg, nc){
+  // texto en lenguaje llano: sin jerga interna, entendible por quien nunca vio el motor
+  const d = (dn===null) ? "no tenemos una medición confiable de cuánto afectaría a la venta"
+                        : "se esperaría vender " + Math.abs(Math.round(dn)) + "% "
+                          + (dn<0 ? "menos" : "más") + " unidades";
+  const f = (fa===null) ? "?" : fa.toFixed(2);
+  const a = (ap===null) ? "?" : (ap>0?"+":"")+ap.toFixed(1);
+  switch(c){
+    case "sf": return "El precio de este modelo se fija en <b>"+f+" veces su costo</b>. Con el costo nuevo, "
+                    + "mantener ese mismo número da <b>"+a+"% de precio</b>. No hay nada que lo impida: "+d+".";
+    case "cg": return "El costo que <b>pagamos</b> se movió, pero <b>no confirmamos</b> que el proveedor haya "
+                    + "cambiado su lista — puede ser una compra puntual o una mezcla de lotes. Si el cambio es "
+                    + "real, el precio subiría "+a+"% (para mantener el factor de "+f+" veces el costo) y "+d+". "
+                    + "<b>Confirma el costo antes de mover el precio.</b>";
+    case "so": return "Hay inventario para <b>"+Math.round(mi)+" meses</b>. Subir el precio dejaría ese "
+                    + "inventario parado más tiempo. Si el margen lo permite, lo correcto sería <b>bajar</b> "
+                    + "el precio para que rote, no subirlo.";
+    case "rm": return "El ERP tiene este modelo clasificado <b>para remate o salida</b>: se está sacando del "
+                    + "catálogo, así que no se le sube el precio.";
+    case "ho": return "Este modelo está <b>apartado a propósito</b> para medir resultados sin tocarlo (grupo de "
+                    + "control). Moverlo arruinaría la medición.";
+    case "bj": return "El costo del proveedor <b>bajó</b>, así que por la misma política el precio debería bajar "
+                    + "lo mismo. Conviene <b>esperar dos ciclos</b> para confirmar que la baja se sostiene: una "
+                    + "baja de costo pasajera no debe mover el precio de lista. El destino es el mismo, solo se "
+                    + "llega más despacio que cuando el costo sube.";
+    case "ya": return "El precio de este modelo <b>ya se movió</b> después de detectarse el cambio de costo. "
+                    + "No hay nada pendiente aquí.";
+    default:   return "No tenemos el precio vigente de este modelo porque <b>no está en la lista que revisa la "
+                    + "vigía diaria</b>, así que no se puede calcular cuánto debería moverse.";
+  }
+}
+function setAud(x){ audAct = x;
+  ["T","A","F","B","R","Y"].forEach(k => { const b=document.getElementById("a_"+k);
+    if(b) b.classList.toggle("btn-pri", k===x); });
+  pintarA(); }
+// recibe el ÍNDICE, no el nombre: los nombres de proveedor traen &, comillas y
+// apóstrofos que rompen el atributo onclick del HTML
+const audAbierto = new Set();
+function audProvSet(i){
+  audAbierto.has(i) ? audAbierto.delete(i) : audAbierto.add(i);
+  pintarAP();
+}
+function pintarAP(){
+  // TODOS los proveedores, no un top-N: con el tope de 40 los que quedaban
+  // fuera no se podían ni abrir. Van ordenados por $ en juego, así que los
+  // que importan quedan arriba, y el desplegable de arriba sirve para buscar.
+  document.getElementById("cuerpoAP").innerHTML = PROV4.map((p, i) => {
+    const [nm,n,dc,ut,na,nf,nr] = p;
+    const ab = audAbierto.has(i);
+    const act = ab ? ' style="background:rgba(37,99,235,.08)"' : "";
+    let fila = '<tr'+act+' onclick="audProvSet('+i+')" style="cursor:pointer" title="Clic para ver o esconder sus modelos">'
+      +'<td><span style="font-weight:600">'+(ab?"▾ ":"▸ ")+nm+'</span></td><td class="num">'+n+'</td>'
+      +'<td class="num" style="color:var(--'+(dc>0?'rojo':'verde')+')">'+(dc>0?'+':'')+dc+'%</td>'
+      +'<td class="num">$'+(ut||0).toLocaleString()+'</td>'
+      +'<td class="num">'+(na?'<span class="badge b-verde">'+na+'</span>':'—')+'</td>'
+      +'<td class="num">'+(nf?'<span class="badge b-rojo">'+nf+'</span>':'—')+'</td>'
+      +'<td class="num">'+(nr?'<span class="badge b-gris">'+nr+'</span>':'—')+'</td></tr>';
+    if (ab){
+      // TODOS sus modelos, sin tope y sin importar el filtro de arriba
+      const ms = FILAS4.filter(f => f[1]===nm);
+      fila += '<tr><td colspan="7" style="padding:0 0 14px 0">'
+        + '<div class="sec-s" style="padding:6px 2px">Los <b>'+ms.length+'</b> modelo(s) de este proveedor '
+        + 'con movimiento de costo, ordenados por la ganancia semanal que dejan. '
+        + 'Clic en el nombre (▸) para abrir el análisis completo del modelo.</div>'
+        + '<table style="margin:0">'
+        + '<thead><tr><th>Modelo</th><th>Proveedor</th><th>Cuánto se movió el costo</th><th>Veces el costo</th>'
+        + '<th>Precio hoy → el que tocaría</th><th>Qué pasaría con la venta</th><th>Cuánto vende</th>'
+        + '<th>Inventario y canal</th><th>Ganancia por semana</th><th>Qué conviene hacer y por qué</th></tr></thead>'
+        + '<tbody>' + ms.map(filaAud).join("") + '</tbody></table></td></tr>';
+    }
+    return fila;
+  }).join("");
+  document.getElementById("contadorAP").textContent =
+    "— " + PROV4.length.toLocaleString() + " proveedores, del que más dinero pone en juego al que menos";
+}
+let selAud = [];
+// DÍAS desde que se detectó el cambio de costo: se muestran SIEMPRE, no sólo
+// cuando llevan mucho. Es el reloj de qué tan rápido reaccionamos, y es el
+// único indicador de este tipo que no tiene referencia publicada en la
+// industria: lo fijamos nosotros. Un ciclo de decisión son 3 semanas (21 días).
+function diasTxt(d, vd){
+  if (d===null) return "";
+  const hecho = (vd==="Y");
+  const col = hecho ? "--verde" : d>=21 ? "--rojo" : d>=7 ? "--ambar" : "--gris";
+  const txt = hecho ? "se movió a los "+d+" día(s)"
+            : d===0 ? "detectado hoy"
+            : "lleva "+d+" día"+(d===1?"":"s")+" sin moverse";
+  const tip = hecho
+    ? "Días entre que se detectó el cambio de costo y hoy. El precio ya se movió dentro de ese lapso."
+    : "Días que lleva el costo movido sin que el precio se ajuste. Nuestro ciclo de decisión es de 3 semanas (21 días): a partir de ahí se marca en rojo, porque cada día que pasa es margen que ya no se recupera.";
+  return '<div class="rng" style="color:var('+col+')" title="'+tip+'">'+txt+'</div>';
+}
+// un solo renderizador de fila, usado por la tabla de eventos Y por el
+// desplegable de cada proveedor (para que no se separen con el tiempo)
+function filaAud(f){
+    const [cod,prov,vd,raz,dc,ap,fa,pv,pp,dn,cf,ep,us,ut,nc,pl,mi,cr,cs,cg,csem,hi,dsr,ma,mn,tp,sid,fte] = f;
+    // de dónde salió el movimiento: reposición (vigía, el titular) o COGS (panel)
+    const fteTxt = fte==="COGS"
+      ? '<span class="rng" title="El dato viene del costo que PAGAMOS en las ventas de la semana. Permite ver 2 meses atrás, pero un movimiento aquí puede venir de una compra puntual o de mezclar lotes de distinto costo: no prueba que el proveedor haya cambiado su lista.">lo que pagamos</span>'
+      : (fte ? '<span class="rng" title="El dato viene de la LISTA DEL PROVEEDOR, o sea lo que nos costaría reponer el producto hoy. Es el bueno para decidir el precio, y se revisa todos los días.">lista del proveedor</span>' : "");
+    // lo que de verdad le pasó a ESTE modelo la última vez: el mejor argumento
+    // el traslado puede ser negativo (el precio se movió al revés que el costo):
+    // decirlo con palabras, porque "le pasamos -47%" no se entiende
+    const tras = hi ? (hi[1] < 0 ? 'movimos el precio en <b>dirección contraria</b>'
+                     : hi[1] === 0 ? '<b>no</b> movimos el precio'
+                     : 'le pasamos <b>'+hi[1]+'%</b> de ese cambio al precio') : "";
+    const hist = hi ? '<div class="rng" style="margin-top:3px" title="La vez anterior que a este mismo modelo le movieron el costo. Es la mejor evidencia que existe, porque no es un pronóstico: es lo que de verdad pasó con este modelo. El porcentaje que «le pasamos» es qué parte del cambio de costo acabó reflejada en el precio: 100% sería pasarlo completo, 0% absorberlo todo.">'
+        + '📜 La vez pasada: el costo se movió '+(hi[0]>0?'+':'')+hi[0]+'%, '+tras+', '
+        + 'la venta hizo '+(hi[2]>0?'+':'')+hi[2]+'% y el margen '+(hi[3]>0?'+':'')+hi[3]+' puntos</div>' : "";
+    const alerta = cs ? '<div class="rng" style="margin-top:3px;color:var(--ambar)" title="Hubo semanas en que no tuvimos inventario suficiente para cubrir lo que este modelo suele vender. Entonces su caída de venta no significa que la gente lo quiera menos: significa que no había producto. No hay que leerla como que «ya vende poco».">⚠ Ojo: vendió menos porque faltó inventario, no porque bajara la demanda</div>' : "";
+    const nomb = sid ? '<span style="font-weight:600;color:var(--azul);cursor:pointer" onclick="abrir(\\''+sid+'\\')">▸ '+cod+'</span>'
+                     : '<span style="font-weight:600">'+cod+'</span>';
+    // ε × movimiento de precio. En una BAJA de costo el signo se invierte y es
+    // una GANANCIA de volumen, no un daño — pintarlo como daño confundía.
+    const CONF = {a:"medición sólida", m:"medición razonable", b:"medición débil"};
+    const dano = (dn===null) ? '<span class="rng" title="No tenemos una medición confiable de qué tan sensible al precio es este modelo, así que preferimos no inventar un número. Sin esa medición, la decisión se apoya en el resto de las columnas.">no medible</span>'
+      : '<span style="color:var('+(dn<=-15?'--rojo':dn<=-8?'--ambar':dn>0?'--verde':'--gris')+')" title="Este modelo pierde alrededor de '+Math.abs(ep).toFixed(1)+'% de venta por cada 1% que sube su precio. Con un movimiento de '+ap+'% eso da '+dn+'% de unidades. Calidad del dato: '+(CONF[cf.slice(0,1)]||cf)+'.'+(dn>0?' Es positivo porque el precio BAJA, así que se vendería más.':'')+'">'
+      +(dn>0?'+':'')+dn+'%<span class="rng"> '+(cf.slice(0,1)==="a"?"✓✓":cf.slice(0,1)==="m"?"✓":"~")+'</span></span>';
+    const comp = (cg===null) ? "" : '<div class="rng" style="margin-top:3px" title="Semáforo competitivo: '+csem+'">⚔ '+(cg>0?'+':'')+cg+'% vs competidor'+(csem==="AMENAZA REAL"?' 🔴':'')+'</div>';
+    return '<tr><td>'+nomb+(tp?'<div class="rng" title="Tipo de proveedor (reportes.revision_precios)">'+tp+'</div>':'')+'</td>'
+      +'<td><span class="rng">'+(prov||"—").slice(0,18)+'</span></td>'
+      +'<td class="num" style="color:var(--'+(dc>0?'rojo':'verde')+')" title="Cuánto se movió el costo del proveedor">'+(dc>0?'+':'')+dc+'%'
+      +'<div>'+fteTxt+'</div>'+diasTxt(dsr,vd)+'</td>'
+      +'<td class="num" title="Factor = precio aplicable ÷ costo. Restaurarlo con el costo nuevo mueve el precio '+ap+'%">'+(fa!==null?fa.toFixed(2):"—")+'</td>'
+      +'<td class="num">$'+(pv!==null?pv.toLocaleString():"—")+' → <b>$'+(pp!==null?pp.toLocaleString():"—")+'</b>'
+      +(ap!==null?'<div class="rng" style="color:var(--'+(Math.abs(ap)>4?'ambar':'gris')+')"'
+        +(Math.abs(ap)>4?' title="Es más de lo que el motor mueve en un ciclo (4%). Aquí sí se permite: no se está optimizando el precio, se está recuperando un costo que ya subió."':'')
+        +'>'+(ap>0?'+':'')+ap+'%'+(Math.abs(ap)>4?' · más de 4%':'')+'</div>':'')+'</td>'
+      +'<td class="num">'+dano+'</td>'
+      +'<td class="num" title="'+(nc!==null&&nc<=2?'Con 1-2 clientes esto no es un precio de mercado: es una negociación con el cliente enfrente':'clientes distintos por semana')+'">'+(us!==null?us.toLocaleString():"—")
+      +'<div class="rng"'+(nc!==null&&nc<=2?' style="color:var(--ambar)"':'')+'>'+(nc!==null?nc+" cli":"")+'</div></td>'
+      +'<td class="num"><span class="rng" title="Meses que duraría el inventario actual al ritmo de venta de hoy. Si pasa de 12 meses no se sube el precio: ya hay demasiado producto y encarecerlo lo dejaría parado más tiempo.">'+(mi!==null?mi+" meses inv.":"—")+'</span>'
+      +'<div class="rng" title="Qué parte de las ventas de este modelo entra por la tienda en línea en lugar de por un vendedor. Cuando la mayoría va por línea, un alza se sostiene mejor: por vendedor tiende a compensarse con más descuento.">'+(pl!==null?pl+"% en línea":"")+'</div></td>'
+      +'<td class="num">$'+(ut||0).toLocaleString()+'</td>'
+      +'<td>'+V_AUD[vd]+'<div class="rng" style="margin-top:3px">'
+      +razonAud(raz,fa,ap,dn,mi,cg,nc)+'</div>'+hist+alerta+comp+'</td></tr>';
+}
+function pintarA(){
+  const q = document.getElementById("buscaA").value.trim().toUpperCase();
+  audProv = document.getElementById("sel_aprov").value;
+  const sel = FILAS4.filter(f => (audAct==="T" || f[2]===audAct)
+    && (!audProv || f[1]===audProv)
+    && (!q || f[0].toUpperCase().includes(q)));
+  selAud = sel;
+  document.getElementById("cuerpoA").innerHTML = sel.slice(0,400).map(filaAud).join("");
+  document.getElementById("contadorA").textContent = "— "+sel.length.toLocaleString()+" eventos"
+    +(sel.length>400?" (mostrando 400)":"")
+    +" · $"+sel.reduce((a,f)=>a+(f[13]||0),0).toLocaleString()+"/sem en juego";
+  pintarAP();
+}
+function exportaAud(){
+  const lineas = ["modelo,precio_por_politica,comentario"];
+  // sólo APLICAR: los de "confirmar costo" quedan fuera a propósito, porque su
+  // precio sugerido se calcula contra una base de COGS que puede no ser el costo
+  // de reponer (ver PENDIENTE en docs/CAMBIOS_PARA_TI.md)
+  selAud.forEach(f => { if (f[8] !== null && f[2]==="A"){
+    lineas.push(f[0] + "," + f[8] + ",Auditor de costos v3 | ciclo __CORTE__ | factor "
+                + f[6] + " restaurado | costo " + (f[4]>0?"+":"") + f[4] + "% | precio "
+                + (f[5]>0?"+":"") + f[5] + "%");
+  }});
+  if (lineas.length === 1) return alert("La selección no tiene eventos con veredicto APLICAR o PARCIAL.");
+  const blob = new Blob(["﻿" + lineas.join("\\n")], {type: "text/csv;charset=utf-8"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "auditor_costos_" + new Date().toISOString().slice(0,10) + ".csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 const selApl = new Set();
 function tSel(cod, el){ el.checked ? selApl.add(cod) : selApl.delete(cod);
@@ -862,13 +1188,27 @@ function setVista(v){
   document.getElementById("vista-dormidos").classList.toggle("oculto", v!=="dorm");
   document.getElementById("vista-sim").classList.toggle("oculto", v!=="sim");
   document.getElementById("vista-competencia").classList.toggle("oculto", v!=="comp");
+  document.getElementById("vista-auditor").classList.toggle("oculto", v!=="aud");
   document.getElementById("v_comp").classList.toggle("btn-pri", v==="comp");
+  document.getElementById("v_aud").classList.toggle("btn-pri", v==="aud");
   document.getElementById("v_motor").classList.toggle("btn-pri", v==="motor");
   document.getElementById("v_dorm").classList.toggle("btn-pri", v==="dorm");
   document.getElementById("v_sim").classList.toggle("btn-pri", v==="sim");
   if (v==="dorm") pintarD();
   if (v==="comp") pintarC();
   if (v==="sim") simular();
+  if (v==="aud") audInit();
+}
+// el desplegable de proveedor se llena del propio lote de eventos
+let audLleno = false;
+function audInit(){
+  if (!audLleno){
+    const s = document.getElementById("sel_aprov");
+    PROV4.forEach(p => { const o=document.createElement("option");
+      o.value=p[0]; o.textContent=p[0].slice(0,34)+" ("+p[1]+")"; s.appendChild(o); });
+    audLleno = true;
+  }
+  pintarA();
 }
 
 /* ================= SIMULADOR DE ESCENARIOS ================= */
@@ -1061,6 +1401,8 @@ pintar();
             .replace("__FILAS__", json.dumps(filas, ensure_ascii=False))
             .replace("__FILAS2__", json.dumps(filas2, ensure_ascii=False))
             .replace("__FILAS3__", json.dumps(filas3, ensure_ascii=False))
+            .replace("__FILAS4__", json.dumps(filas4, ensure_ascii=False))
+            .replace("__PROV4__", json.dumps(prov4, ensure_ascii=False))
             .replace("__CORTE__", str(corte))
             .replace("__CAL__", json.dumps(cal_js))
             .replace("__TIENE_PROV__", "true" if tiene_prov else "false")
