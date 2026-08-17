@@ -25,7 +25,7 @@ DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 PANEL = os.path.join(DATA, "panel.parquet")
 OUT = os.path.join(DATA, "backtest.parquet")
 
-H = 3  # semanas de holdout = horizonte de decisión (ciclo de sugerencias: 3 semanas)
+H = 1  # semanas de holdout (minimal; usa prácticamente todos los datos; 2026-08-14)
 
 
 def _matriz(pan):
